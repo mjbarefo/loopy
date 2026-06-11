@@ -18,11 +18,15 @@ func handleInit(cwd string, args []string) error {
 	if err != nil {
 		return err
 	}
-	path, err := loop.InitProject(root)
+	path, ignoredNow, err := loop.InitProject(root)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("initialized %s (.loopy/ added to .gitignore)\n", path)
+	if ignoredNow {
+		fmt.Printf("initialized %s (.loopy/ added to .gitignore — commit that)\n", path)
+	} else {
+		fmt.Printf("initialized %s\n", path)
+	}
 
 	offerDetectedAgents(root)
 

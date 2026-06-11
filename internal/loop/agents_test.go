@@ -33,7 +33,7 @@ func TestExpandAgentCommandUnknownVariable(t *testing.T) {
 
 func TestAgentRegistry(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	if err := AddAgent(root, "Claude Code", "claude -p {prompt}", false); err != nil {
@@ -76,7 +76,7 @@ func TestAgentRegistry(t *testing.T) {
 
 func TestAddAgentValidation(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	if err := AddAgent(root, "", "cmd", false); err == nil {
