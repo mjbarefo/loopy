@@ -1,0 +1,133 @@
+#!/usr/bin/expect -f
+# tui-smoke.exp — PTY smoke tests for `loopy watch`, ported from crux's
+# approach: drive the real binary in a pseudo-terminal at wide (120x36) and
+# narrow (60x24) sizes, with and without color, and against a genuinely live
+# loop. Static frames are unit-tested in internal/tui; this proves the
+# monitor works in a real terminal without a human watching.
+#
+# usage: expect scripts/tui-smoke.exp <loopy-binary>
+
+set timeout 20
+match_max 400000
+
+if {[llength $argv] < 1} {
+    puts stderr "usage: tui-smoke.exp <loopy-binary>"
+    exit 2
+}
+set bin [file normalize [lindex $argv 0]]
+
+proc fail {msg} {
+    puts stderr "\nFAIL: $msg"
+    exit 1
+}
+proc note {msg} { puts "==> $msg" }
+
+# Frames carry color only as a secondary signal; this matches the SGR
+# foreground color range (30-37) anywhere in a parameter list — the renderer
+# merges codes (e.g. ESC[36;22m) — so NO_COLOR can be asserted both ways.
+proc has_color {text} { return [regexp {\x1b\[[0-9;]*3[0-7][0-9;]*m} $text] }
+
+# --- workbench: throwaway repo, one parked loop ------------------------------
+set repo [exec mktemp -d /tmp/loopy-tui-smoke.XXXXXX]
+note "workbench: $repo"
+exec sh -c "cd '$repo' && git init -q -b main && git config user.email smoke@loopy.local && git config user.name smoke && echo hello > README.md && git add . && git commit -qm init"
+exec sh -c "cd '$repo' && '$bin' init > /dev/null && git add .gitignore && git commit -qm 'ignore .loopy'"
+exec sh -c "cd '$repo' && '$bin' agent add idle --cmd 'true' --default > /dev/null"
+exec sh -c "cd '$repo' && '$bin' run 'park immediately for the smoke test' --verify 'echo still failing; false' --max-iters 1 > /dev/null 2>&1; true"
+cd $repo
+set env(TERM) xterm-256color
+
+# --- wide 120x36, color, keys ------------------------------------------------
+note "wide 120x36 with color"
+unset -nocomplain env(NO_COLOR)
+set stty_init "rows 36 columns 120"
+spawn $bin watch
+expect {
+    -ex " loops " {}
+    timeout { fail "wide: loop list pane never appeared" }
+}
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "wide: loop id missing from the frame" }
+}
+# The footer always carries the exact next command (it wins the space fight
+# over the key hints).
+expect {
+    -ex "next: loopy log" {}
+    timeout { fail "wide: footer never showed the next command" }
+}
+if {![has_color $expect_out(buffer)]} { fail "wide: expected color in a color-capable PTY" }
+
+send "\t"
+expect {
+    -ex {[iterations]} {}
+    timeout { fail "wide: tab did not switch to the iterations view" }
+}
+expect {
+    -ex "✗ verify" {}
+    timeout { fail "wide: iteration timeline missing its verdict row" }
+}
+send "?"
+expect {
+    -ex "pause at the next iteration boundary" {}
+    timeout { fail "wide: help overlay never appeared" }
+}
+send "q"
+expect eof
+
+# --- narrow 60x24: the loop list pane collapses ------------------------------
+note "narrow 60x24"
+set stty_init "rows 24 columns 60"
+spawn $bin watch
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "narrow: loop id missing from the frame" }
+}
+if {[string first "┬" $expect_out(buffer)] != -1} {
+    fail "narrow: list pane should collapse below 80 columns"
+}
+send "q"
+expect eof
+
+# --- NO_COLOR: glyphs and words only -----------------------------------------
+note "NO_COLOR 120x36"
+set env(NO_COLOR) 1
+set stty_init "rows 36 columns 120"
+spawn $bin watch
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "no_color: frame never appeared" }
+}
+expect {
+    -ex "✗" {}
+    timeout { fail "no_color: status glyph missing (color must never be the only signal)" }
+}
+if {[has_color $expect_out(buffer)]} { fail "no_color: SGR color codes present despite NO_COLOR" }
+send "q"
+expect eof
+unset env(NO_COLOR)
+
+# --- a live loop: watch shows it running -------------------------------------
+note "live loop"
+exec sh -c "cd '$repo' && '$bin' agent add slow --cmd 'sleep 8' > /dev/null"
+# Tcl-level & — backgrounding inside sh still makes exec wait for the child.
+exec sh -c "cd '$repo' && '$bin' run 'stay busy so the monitor sees a live loop' --verify 'echo not yet; false' --agent slow --max-iters 1 > /dev/null 2>&1" &
+sleep 2
+set stty_init "rows 36 columns 120"
+spawn $bin watch
+# Match the bare word: the status sits inside color escapes in the title.
+expect {
+    -ex "running" {}
+    timeout { fail "live: monitor never showed the loop running" }
+}
+expect {
+    -ex "agent.log" {}
+    timeout { fail "live: the live view never tailed the agent log" }
+}
+send "q"
+expect eof
+# Let the background engine park before the workbench disappears.
+exec sh -c "sleep 10"
+
+note "ok — all PTY smoke scenarios passed"
+exit 0
