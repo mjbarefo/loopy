@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 )
@@ -84,10 +85,29 @@ func run(args []string) error {
 		return handleInit(cwd, args[1:])
 	case "agent":
 		return handleAgent(cwd, args[1:])
+	case "run":
+		return handleRun(cwd, args[1:])
+	case "list":
+		return handleList(cwd, args[1:])
+	case "status":
+		return handleStatus(cwd, args[1:])
+	case "log":
+		return handleLog(cwd, args[1:])
+	case "pause":
+		return handlePause(cwd, args[1:])
+	case "resume":
+		return handleResume(cwd, args[1:])
+	case "abort":
+		return handleAbort(cwd, args[1:])
 	case "doctor":
 		return handleDoctor(cwd, args[1:])
 	default:
-		return usagef("unknown command %q (see `loopy help`)", args[0])
+		// The happy path: loopy "<goal>". Only multi-word arguments read as
+		// goals, so a typo'd command can't silently become a loop.
+		if len(args) == 1 && strings.ContainsAny(args[0], " \t") {
+			return handleRun(cwd, args)
+		}
+		return usagef("unknown command %q (see `loopy help`; to start a loop: loopy \"<goal>\")", args[0])
 	}
 }
 
@@ -102,7 +122,18 @@ const rootHelp = `loopy — engineer loops, not prompts
   An agent iterates in an isolated git worktree until your verifier goes
   green or the budget runs out. You review the result; loopy never ships.
 
-usage:
+start a loop:
+  loopy "<goal>"                        the happy path: defaults for everything
+  loopy run "<goal>" [flags]            engineer the loop deliberately
+                                        (see loopy run --help)
+
+watch and steer:
+  loopy list [--json]                   all loops, one line each
+  loopy status [loop-id] [--json]       one loop in depth (default: newest)
+  loopy log <loop-id> [--iter N]        the recorded iteration history
+  loopy pause | resume | abort <id>     control a running loop
+
+setup:
   loopy init                            prepare this repository for loops
   loopy agent add <name> --cmd <tmpl>   register an agent command
   loopy agent list | remove <name>      manage registered agents
@@ -112,4 +143,5 @@ usage:
 agent command templates substitute (always shell-quoted):
   {prompt} {prompt_file} {worktree} {loop_id} {goal} {iteration}
 
-exit codes: 0 success · 1 runtime failure · 2 usage error`
+exit codes: 0 success · 1 runtime failure · 2 usage error
+(loopy run: 0 means the loop parked green)`

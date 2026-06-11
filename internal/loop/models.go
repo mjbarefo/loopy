@@ -101,6 +101,9 @@ type Iteration struct {
 	Index     int    `json:"index"`
 	StartedAt string `json:"started_at"`
 	EndedAt   string `json:"ended_at"`
+	// WallMS is the iteration's precise wall time; the RFC3339 timestamps
+	// above are second-resolution and for humans.
+	WallMS int64 `json:"wall_ms"`
 
 	// AgentExit is nil for the baseline iteration (no agent ran).
 	AgentExit *int  `json:"agent_exit,omitempty"`
