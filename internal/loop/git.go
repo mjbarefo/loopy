@@ -39,12 +39,13 @@ func DetectGitRoot(path string) (string, error) {
 // don't count: loop worktrees branch from HEAD and never see them, so they
 // can't make a loop's diff unreproducible.
 func DirtyPaths(root string) ([]string, error) {
-	output, err := gitOutput(root, "status", "--porcelain", "--untracked-files=no")
+	output, err := runGitChecked(root, nil, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return nil, err
 	}
 	var paths []string
-	for _, line := range strings.Split(output, "\n") {
+	// Porcelain v1: two status columns, a space, then the path.
+	for _, line := range strings.Split(string(output), "\n") {
 		if len(line) > 3 {
 			paths = append(paths, line[3:])
 		}
