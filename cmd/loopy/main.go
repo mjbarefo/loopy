@@ -101,6 +101,14 @@ func run(args []string) error {
 		return handleResume(cwd, args[1:])
 	case "abort":
 		return handleAbort(cwd, args[1:])
+	case "review":
+		return handleReview(cwd, args[1:])
+	case "accept":
+		return handleAccept(cwd, args[1:])
+	case "reject":
+		return handleReject(cwd, args[1:])
+	case "logbook":
+		return handleLogbook(cwd, args[1:])
 	case "doctor":
 		return handleDoctor(cwd, args[1:])
 	default:
@@ -136,6 +144,14 @@ watch and steer:
   loopy status [loop-id] [--json]       one loop in depth (default: newest)
   loopy log <loop-id> [--iter N]        the recorded iteration history
   loopy pause | resume | abort <id>     control a running loop
+
+judge:
+  loopy review <loop-id>                final diff, verifier transcript,
+                                        iteration history
+  loopy accept <loop-id>                record the decision; non-green needs
+                                        --override --reason (kept verbatim)
+  loopy reject <loop-id> [--reason]     decline; evidence kept, worktree freed
+  loopy logbook [--json]                durable memory of every decision
 
 setup:
   loopy init                            prepare this repository for loops

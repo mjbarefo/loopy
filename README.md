@@ -117,10 +117,20 @@ the safe, reversible actions — pause, resume, abort (with confirmation) —
 and always shows the exact next command in the footer. Accept and reject
 stay in the CLI.
 
+Judge:
+
+```bash
+loopy review <loop-id>          # final diff + verifier transcript + history
+loopy accept <loop-id>          # audited; non-green needs --override --reason
+loopy reject <loop-id> --reason "too broad"   # evidence kept, worktree freed
+loopy logbook                   # what was decided, and why, forever
+```
+
 Every iteration records `prompt.md` (exactly what the agent was told),
 `agent.log`, `verifier.log`, a cumulative `diff.patch`, and `iteration.json`
-under `.loopy/loops/<id>/iterations/`. The diff applies with `git apply` —
-shipping it is your call, on your terms.
+under `.loopy/loops/<id>/iterations/`. Accepting writes a durable
+`final-diff.patch` that applies with `git apply` — shipping it is your call,
+on your terms.
 
 ## STATUS
 
@@ -135,12 +145,17 @@ What works today:
 - **The monitor**: `loopy watch` (Bubble Tea v2) — loop list, live tailing,
   iteration timeline, diff/verifier viewers, pause/resume/abort from the
   keyboard, `--once` for scripts, PTY smoke tests in CI.
-- The demo: `scripts/demo.sh`, no API keys.
+- **The judgment**: `loopy review` (final diff + verifier transcript +
+  history), `accept`/`reject` with `--override --reason` recorded verbatim,
+  durable `final-diff.patch` and `review.json`, and the `logbook` — the
+  project's memory of every decision. The logbook implementation was itself
+  built by a loopy loop (see `DECISIONS.md`).
+- The demo: `scripts/demo.sh`, no API keys, now running the full cycle
+  through accept and the logbook.
 
 What doesn't exist yet (in design order — see `DESIGN.md`):
 
-- **Race mode and the judge** (`--race claude,codex`), **review/accept/reject**
-  with audited overrides, and the **logbook** are M3.
+- **Race mode and the judge** (`--race claude,codex`) are the rest of M3.
 - **Releases** (binaries, homebrew) are M4 — build from source for now.
 - The headless agent matrix (exact flags per agent CLI) is documented as
   suggestions, not yet systematically tested.
