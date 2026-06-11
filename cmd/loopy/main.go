@@ -109,6 +109,8 @@ func run(args []string) error {
 		return handleReject(cwd, args[1:])
 	case "logbook":
 		return handleLogbook(cwd, args[1:])
+	case "judge":
+		return handleJudge(cwd, args[1:])
 	case "doctor":
 		return handleDoctor(cwd, args[1:])
 	default:
@@ -151,6 +153,8 @@ judge:
   loopy accept <loop-id>                record the decision; non-green needs
                                         --override --reason (kept verbatim)
   loopy reject <loop-id> [--reason]     decline; evidence kept, worktree freed
+  loopy judge <id> <id> [...]           rank finished loops by their evidence
+                                        (deterministic; used by --race)
   loopy logbook [--json]                durable memory of every decision
 
 setup:

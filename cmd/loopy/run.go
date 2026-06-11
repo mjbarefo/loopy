@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mjbarefo/loopy/internal/loop"
@@ -18,6 +19,8 @@ const runHelp = `usage:
 flags:
   --verify <cmd>          verifier stage; repeatable, runs in order (fast→slow)
   --agent <name>          registered agent to use (default: registry default)
+  --race <a,b[,c]>        race these agents on the goal in parallel worktrees;
+                          the deterministic judge ranks the parked results
   --max-iters <n>         iteration budget (default 8)
   --max-time <dur>        wall-clock budget, e.g. 30m (default 30m)
   --constraint <text>     goal constraint; repeatable
@@ -27,7 +30,8 @@ Without --verify, loopy uses the project's stored default verifier, or infers
 one from the repo (make check, go test, npm test, ...) and asks once before
 storing it. A loop cannot be created without a verifier.
 
-exit codes: 0 loop parked green · 1 parked red or failed · 2 usage error`
+exit codes: 0 loop parked green (race: the judge named a winner) ·
+            1 parked red or failed · 2 usage error`
 
 // stringList is a repeatable string flag.
 type stringList []string
@@ -46,6 +50,7 @@ func handleRun(cwd string, args []string) error {
 	fs.Var(&constraints, "constraint", "constraint (repeatable)")
 	fs.Var(&forbidden, "forbidden-path", "forbidden path (repeatable)")
 	agent := fs.String("agent", "", "agent name")
+	race := fs.String("race", "", "comma-separated agents to race")
 	maxIters := fs.Int("max-iters", 0, "max iterations")
 	maxTime := fs.Duration("max-time", 0, "max wall clock")
 
@@ -81,7 +86,7 @@ func handleRun(cwd string, args []string) error {
 		return err
 	}
 
-	l, err := loop.CreateLoop(root, loop.CreateOptions{
+	opts := loop.CreateOptions{
 		Goal:           goal,
 		Agent:          *agent,
 		Verifier:       stages,
@@ -91,11 +96,70 @@ func handleRun(cwd string, args []string) error {
 			MaxIterations: *maxIters,
 			MaxWallClock:  loop.Duration(*maxTime),
 		},
-	})
+	}
+
+	if *race != "" {
+		if *agent != "" {
+			return usagef("--agent and --race are mutually exclusive")
+		}
+		return driveRace(root, opts, splitAgents(*race))
+	}
+
+	l, err := loop.CreateLoop(root, opts)
 	if err != nil {
 		return err
 	}
 	return driveEngine(root, l.ID)
+}
+
+func splitAgents(list string) []string {
+	var agents []string
+	for _, a := range strings.Split(list, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			agents = append(agents, a)
+		}
+	}
+	return agents
+}
+
+// driveRace runs the parallel loops with prefixed progress lines, prints
+// the judge's verdict, and exits 0 only when a winner was named.
+func driveRace(root string, opts loop.CreateOptions, agents []string) error {
+	var mu sync.Mutex
+	say := func(prefix, format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		fmt.Printf("[%s] %s\n", prefix, fmt.Sprintf(format, args...))
+	}
+	record, err := loop.RunRace(root, opts, agents, func(loopID, agent string) loop.Events {
+		return loop.Events{
+			LoopStarted: func(l loop.Loop) {
+				say(agent, "loop %s started (branch %s)", l.ID, l.Branch)
+			},
+			IterationStarted: func(index, max int) {
+				say(agent, "iter %d/%d: agent running…", index, max)
+			},
+			IterationDone: func(it loop.Iteration, l loop.Loop) {
+				verdict := colorize(green, "✓ green")
+				if !it.Green {
+					verdict = colorize(red, "✗ "+it.FailingStage)
+				}
+				say(agent, "iter %d: %s", it.Index, verdict)
+			},
+			LoopEnded: func(l loop.Loop) {
+				say(agent, "parked: %s", l.Status)
+			},
+		}
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nrace %s — all loops parked, judged:\n\n", record.ID)
+	fmt.Print(loop.RenderVerdict(record.Verdict))
+	if record.Verdict.Winner == "" {
+		return fmt.Errorf("race parked without a safe winner")
+	}
+	return nil
 }
 
 // driveEngine runs the engine in the foreground with progress lines, shared

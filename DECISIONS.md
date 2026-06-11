@@ -131,6 +131,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   compared against its worktree while being applied; a rejected one is dead
   weight. `final-diff.patch` is durable either way.
 
+- **2026-06-11 — The judge's total order, and when it names a winner.**
+  Ranking: green before red; an applicable diff before an empty one;
+  manifest-free before manifest-touching; then fewer changed files, smaller
+  diff, fewer iterations, less wall clock, loop ID. A winner is named only
+  when the top candidate is green with a non-empty diff and no
+  dependency-manifest changes — otherwise "no safe winner", which exits 1
+  from a race. Overlapping files between green candidates are flagged, not
+  disqualifying (the human picks one diff anyway).
+
+- **2026-06-11 — `loopy judge <id> <id>…` is a command, not just race
+  internals.** The design only routed the judge through `--race`; exposing
+  it directly makes verdicts reproducible after the fact and the ranking
+  testable from the CLI. Races persist their verdict under
+  `.loopy/races/<race-id>/race.json`.
+
 - **2026-06-11 — The logbook was implemented by a loopy loop.** Loop
   `implement-the-logbook-in-internal`: stubs + failing tests committed,
   claude agent, verifier `gofmt`/`go build`/targeted `go test`, green in one

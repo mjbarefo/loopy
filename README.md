@@ -150,12 +150,16 @@ What works today:
   durable `final-diff.patch` and `review.json`, and the `logbook` — the
   project's memory of every decision. The logbook implementation was itself
   built by a loopy loop (see `DECISIONS.md`).
+- **Race mode and the judge**: `loopy run "<goal>" --race claude,codex` runs
+  one loop per agent in parallel worktrees; the deterministic judge ranks
+  the parked evidence (smallest clean green diff wins), flags
+  dependency-manifest changes and overlapping files, and "no safe winner"
+  is a legitimate verdict. `loopy judge <id> <id>` re-ranks any finished
+  loops; race verdicts persist under `.loopy/races/`.
 - The demo: `scripts/demo.sh`, no API keys, now running the full cycle
   through accept and the logbook.
 
 What doesn't exist yet (in design order — see `DESIGN.md`):
-
-- **Race mode and the judge** (`--race claude,codex`) are the rest of M3.
 - **Releases** (binaries, homebrew) are M4 — build from source for now.
 - The headless agent matrix (exact flags per agent CLI) is documented as
   suggestions, not yet systematically tested.
