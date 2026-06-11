@@ -95,6 +95,32 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   verifier is never used unconfirmed: interactive runs confirm once and store
   it; non-interactive runs must pass `--verify` or have a stored default.
 
+- **2026-06-11 — Bubble Tea v2 stable (v2.0.7) via the `charm.land` vanity
+  path; no styling library.** v2 went stable since the design was written
+  (crux had to pin v1). The monitor hand-rolls layout and ANSI color instead
+  of taking lipgloss: frames stay byte-deterministic for `--once` and the
+  frame unit tests, and the dependency surface stays one library. Only
+  `internal/tui` imports it; `internal/loop` is still stdlib-only.
+
+- **2026-06-11 — `loopy run` does not auto-attach the monitor.** The design
+  suggested attaching on a TTY; instead a TTY run prints a
+  `loopy watch <id>` hint. Two terminals beat one hijacked stream — the
+  engine's plain log stays scrollback, the monitor stays optional, and the
+  no-TTY path needs no separate code.
+
+- **2026-06-11 — The monitor's resume spawns a detached `loopy resume`
+  engine; everything else is control.json or a hint.** A paused loop has no
+  engine to poll control.json, so in-monitor resume must start one — the
+  spawned child is a normal engine under the normal lock, so the
+  single-writer rule holds. Abort of a loop with no live engine is *not*
+  taken in the monitor (it would mean writing loop state); the footer points
+  at `loopy abort <id>` instead.
+
+- **2026-06-11 — `watch --once` renders the iterations view, ANSI-free, at
+  width 100 (COLUMNS overrides).** One deterministic frame for scripts:
+  same renderer as the live monitor, color off, content-sized height,
+  convergence timeline rather than a log tail.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be

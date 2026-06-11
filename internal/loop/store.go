@@ -257,6 +257,14 @@ func LoadIterations(root, loopID string) ([]Iteration, error) {
 		}
 		var it Iteration
 		if err := ReadJSON(filepath.Join(dir, entry.Name(), iterFile), &it); err != nil {
+			// The engine creates the evidence directory first and writes
+			// iteration.json last: a missing record means the iteration is
+			// in flight (or died mid-write), not corrupt state. Readers —
+			// list, status, the monitor — must keep working while the
+			// engine runs.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return nil, err
 		}
 		iterations = append(iterations, it)

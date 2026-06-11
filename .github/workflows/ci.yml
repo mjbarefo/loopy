@@ -37,6 +37,11 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 go build ./cmd/loopy
 
+      - name: PTY smoke test the monitor
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q expect
+          make tui-smoke
+
       - name: Cross-compile release targets
         run: |
           for target in "darwin amd64" "darwin arm64" "linux amd64" "linux arm64" "windows amd64" "windows arm64"; do

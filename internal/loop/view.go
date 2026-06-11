@@ -23,10 +23,14 @@ type IterationView struct {
 // LoopView is the shared view-model: everything the plain renderer (and the
 // M2 monitor) needs, with no rendering logic attached.
 type LoopView struct {
-	ID             string          `json:"id"`
-	Goal           string          `json:"goal"`
-	Agent          string          `json:"agent"`
-	Status         string          `json:"status"`
+	ID     string `json:"id"`
+	Goal   string `json:"goal"`
+	Agent  string `json:"agent"`
+	Status string `json:"status"`
+	// Live reports whether an engine process currently holds this loop's
+	// lock — "running" status with no live engine means a crashed or
+	// backgrounded loop that needs `loopy resume`.
+	Live           bool            `json:"live,omitempty"`
 	ParkedReason   string          `json:"parked_reason,omitempty"`
 	IterationsUsed int             `json:"iterations_used"`
 	MaxIterations  int             `json:"max_iterations"`
@@ -48,11 +52,13 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 	if err != nil {
 		return LoopView{}, err
 	}
+	_, live, _ := EngineLockState(root, l.ID)
 	view := LoopView{
 		ID:             l.ID,
 		Goal:           l.Goal,
 		Agent:          l.Agent,
 		Status:         l.Status,
+		Live:           live,
 		ParkedReason:   l.ParkedReason,
 		IterationsUsed: l.IterationsUsed,
 		MaxIterations:  l.Budget.MaxIterations,
@@ -97,7 +103,7 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 func nextCommand(l Loop, finalDiff string) string {
 	switch l.Status {
 	case StatusRunning:
-		return fmt.Sprintf("loopy status %s", l.ID)
+		return fmt.Sprintf("loopy watch %s", l.ID)
 	case StatusPaused:
 		return fmt.Sprintf("loopy resume %s", l.ID)
 	case StatusGreen:

@@ -124,6 +124,12 @@ func progressEvents() loop.Events {
 			fmt.Printf("loop %s started · agent %s · budget %d iters / %s\n",
 				colorize(cyan, l.ID), l.Agent, l.Budget.MaxIterations, time.Duration(l.Budget.MaxWallClock))
 			fmt.Printf("worktree %s (branch %s)\n", l.Worktree, l.Branch)
+			if isTTY(os.Stdout) {
+				// The monitor attaches from a second terminal by design
+				// (see DECISIONS.md) — point at it instead of hijacking
+				// this stream.
+				fmt.Printf("watch live in another terminal: loopy watch %s\n", l.ID)
+			}
 		},
 		BaselineStarted: func() {
 			fmt.Println("baseline: verifying before the first agent run…")
