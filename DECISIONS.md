@@ -121,6 +121,24 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   same renderer as the live monitor, color off, content-sized height,
   convergence timeline rather than a log tail.
 
+- **2026-06-11 — review.json is the decision record; logbook.md is the
+  narrative.** `loopy logbook --json` aggregates the per-loop review.json
+  files instead of maintaining a second structured store — one source of
+  truth, and the markdown stays a human document.
+
+- **2026-06-11 — Accept keeps the worktree; only reject frees it.** The
+  design states the asymmetry and it holds up: an accepted diff may still be
+  compared against its worktree while being applied; a rejected one is dead
+  weight. `final-diff.patch` is durable either way.
+
+- **2026-06-11 — The logbook was implemented by a loopy loop.** Loop
+  `implement-the-logbook-in-internal`: stubs + failing tests committed,
+  claude agent, verifier `gofmt`/`go build`/targeted `go test`, green in one
+  iteration; the diff was reviewed with the new `loopy review` and applied by
+  hand, then the loop was accepted using the logbook code it had itself
+  written. Dogfooding is the development model now: any task with a crisp
+  verifier should go through a loop.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be

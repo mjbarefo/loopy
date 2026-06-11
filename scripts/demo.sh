@@ -96,9 +96,21 @@ echo
 echo "==> what the agent was told in iteration 2 (excerpt):"
 sed -n '/## Feedback/,/```$/p' .loopy/loops/make-fizzbuzz-pass-its-tests/iterations/0002/prompt.md | head -8
 echo
-echo "==> the reviewed output is a diff, not a merge:"
+echo "==> the terminal human moment: loopy review"
 echo
-cat .loopy/loops/make-fizzbuzz-pass-its-tests/iterations/0003/diff.patch
+"$LOOPY" review make-fizzbuzz-pass-its-tests
+echo
+echo "==> accept it — the decision is audited, the diff becomes durable:"
+echo
+"$LOOPY" accept make-fizzbuzz-pass-its-tests
+echo
+echo "==> and the project remembers, forever:"
+echo
+"$LOOPY" logbook
+echo
+echo "==> the reviewed output is a diff, not a merge. Shipping is your move:"
+echo "    cd $demo"
+echo "    git apply .loopy/loops/make-fizzbuzz-pass-its-tests/final-diff.patch"
 echo
 echo "==> explore the full trail yourself:"
 echo "    cd $demo"
