@@ -132,6 +132,77 @@ func RenderIterationDetail(root, loopID string, it Iteration) string {
 	return b.String()
 }
 
+// RenderReview is `loopy review <id>`: the terminal human moment — final
+// diff, verifier transcript, iteration history, and the exact commands that
+// record a decision. transcript is the (already capped) verifier log of the
+// last verified iteration; diff is the loop's cumulative patch.
+func RenderReview(v LoopView, review *Review, transcript string, transcriptIter int, diff []byte) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "review: %s · %s · %d iteration(s) · %s\n", v.ID, v.Status, v.IterationsUsed, v.WallClockUsed)
+	fmt.Fprintf(&b, "goal: %s\n", v.Goal)
+	fmt.Fprintf(&b, "agent: %s\n", v.Agent)
+	if v.ParkedReason != "" {
+		fmt.Fprintf(&b, "note: %s\n", v.ParkedReason)
+	}
+
+	if len(v.Iterations) > 0 {
+		b.WriteString("\n  iter      verdict            agent      verify     diff\n")
+		for _, it := range v.Iterations {
+			b.WriteString("  " + RenderIterationRow(it) + "\n")
+		}
+	}
+
+	if transcript != "" {
+		fmt.Fprintf(&b, "\nverifier transcript (iteration %d):\n", transcriptIter)
+		for _, line := range tailLines(transcript, 40) {
+			fmt.Fprintf(&b, "  | %s\n", line)
+		}
+	}
+
+	if len(diff) > 0 {
+		fmt.Fprintf(&b, "\ndiff (%s):\n%s", HumanBytes(len(diff)), diff)
+		if diff[len(diff)-1] != '\n' {
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString("\ndiff: none — the verifier was already green at baseline\n")
+	}
+
+	switch {
+	case review != nil:
+		fmt.Fprintf(&b, "\ndecision: %s at %s", review.Decision, review.DecidedAt)
+		if review.Override {
+			fmt.Fprintf(&b, " (override: %s)", review.Reason)
+		} else if review.Reason != "" {
+			fmt.Fprintf(&b, " (%s)", review.Reason)
+		}
+		b.WriteString("\n")
+		if review.FinalDiff != "" {
+			fmt.Fprintf(&b, "apply: git apply %s\n", review.FinalDiff)
+		}
+	case v.Status == StatusGreen:
+		fmt.Fprintf(&b, "\naccept: loopy accept %s\nreject: loopy reject %s [--reason text]\n", v.ID, v.ID)
+	case v.Status == StatusParked:
+		fmt.Fprintf(&b, "\nthis loop is not green — accepting requires the audited override:\n  loopy accept %s --override --reason \"<why>\"\nreject: loopy reject %s [--reason text]\n", v.ID, v.ID)
+	}
+	return b.String()
+}
+
+// RenderLogbookEntry is one decision in `loopy logbook` plain output.
+func RenderLogbookEntry(r Review) string {
+	date := r.DecidedAt
+	if len(date) >= 10 {
+		date = date[:10]
+	}
+	line := fmt.Sprintf("%-12s %s · %s · %d iteration(s) · %s", date, r.LoopID, r.Decision, r.Iterations, r.WallClock)
+	if r.Override {
+		line += " · OVERRIDE: " + r.Reason
+	} else if r.Reason != "" {
+		line += " · " + r.Reason
+	}
+	return line
+}
+
 func tailLines(s string, n int) []string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	if len(lines) > n {

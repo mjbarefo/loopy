@@ -2,6 +2,7 @@ package loop
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -94,6 +95,12 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 			view.FinalDiffPath = filepath.Join(IterationDir(root, l.ID, last.Index), DiffFile)
 		}
 	}
+	// After accept the durable copy is the one to point at.
+	if durable := filepath.Join(LoopDir(root, l.ID), FinalDiffFile); l.Status == StatusAccepted {
+		if _, err := os.Stat(durable); err == nil {
+			view.FinalDiffPath = durable
+		}
+	}
 	view.NextCommand = nextCommand(l, view.FinalDiffPath)
 	return view, nil
 }
@@ -106,14 +113,13 @@ func nextCommand(l Loop, finalDiff string) string {
 		return fmt.Sprintf("loopy watch %s", l.ID)
 	case StatusPaused:
 		return fmt.Sprintf("loopy resume %s", l.ID)
-	case StatusGreen:
+	case StatusGreen, StatusParked:
+		return fmt.Sprintf("loopy review %s", l.ID)
+	case StatusAccepted:
 		if finalDiff != "" {
-			// `loopy review` arrives at M3; until then the diff is the review.
-			return fmt.Sprintf("review the diff: less %s", finalDiff)
+			return fmt.Sprintf("git apply %s", finalDiff)
 		}
-		return fmt.Sprintf("loopy log %s", l.ID)
-	case StatusParked:
-		return fmt.Sprintf("loopy log %s", l.ID)
+		return ""
 	default:
 		return ""
 	}
