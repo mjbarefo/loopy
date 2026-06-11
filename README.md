@@ -101,11 +101,21 @@ loopy run "fix flaky importer test" \
 Watch and steer:
 
 ```bash
+loopy watch                     # the monitor: live tail, timeline, drill-downs
+loopy watch --once              # one plain frame for scripts (honors COLUMNS)
 loopy list                      # all loops, one line each
 loopy status                    # the newest loop in depth (--json for scripts)
 loopy log <loop-id> --iter 2    # exactly what happened in iteration 2
 loopy pause | resume | abort <loop-id>
 ```
+
+The monitor is the product's face: start a loop in one terminal, open
+`loopy watch` in another, and *see* it converge — live agent/verifier
+tailing, the iteration timeline, and drill-down viewers for the diff and
+verifier log (tail-first, 256 KiB cap, truncation banners). It takes only
+the safe, reversible actions — pause, resume, abort (with confirmation) —
+and always shows the exact next command in the footer. Accept and reject
+stay in the CLI.
 
 Every iteration records `prompt.md` (exactly what the agent was told),
 `agent.log`, `verifier.log`, a cumulative `diff.patch`, and `iteration.json`
@@ -122,12 +132,13 @@ What works today:
 - `init`, `agent add/list/remove`, `run` (+ `loopy "<goal>"` sugar), `list`,
   `status`, `log` (all with `--json`), `pause` / `resume` / `abort`, `doctor`,
   crash resumability, verifier inference.
+- **The monitor**: `loopy watch` (Bubble Tea v2) — loop list, live tailing,
+  iteration timeline, diff/verifier viewers, pause/resume/abort from the
+  keyboard, `--once` for scripts, PTY smoke tests in CI.
 - The demo: `scripts/demo.sh`, no API keys.
 
 What doesn't exist yet (in design order — see `DESIGN.md`):
 
-- **The monitor** (`loopy watch`): the live TUI loop monitor is M2. Today you
-  watch the engine's plain progress stream and `loopy status`.
 - **Race mode and the judge** (`--race claude,codex`), **review/accept/reject**
   with audited overrides, and the **logbook** are M3.
 - **Releases** (binaries, homebrew) are M4 — build from source for now.

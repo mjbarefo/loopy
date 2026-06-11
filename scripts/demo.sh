@@ -89,6 +89,10 @@ echo "==> the loop is parked; loopy never merges. The evidence trail:"
 echo
 "$LOOPY" status make-fizzbuzz-pass-its-tests
 echo
+echo "==> the monitor's view of the same loop (loopy watch, one frame):"
+echo
+COLUMNS=100 "$LOOPY" watch make-fizzbuzz-pass-its-tests --once
+echo
 echo "==> what the agent was told in iteration 2 (excerpt):"
 sed -n '/## Feedback/,/```$/p' .loopy/loops/make-fizzbuzz-pass-its-tests/iterations/0002/prompt.md | head -8
 echo
