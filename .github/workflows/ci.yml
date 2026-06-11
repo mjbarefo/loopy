@@ -9,15 +9,19 @@ permissions:
   contents: read
 
 jobs:
-  go:
-    name: Go
-    runs-on: ubuntu-latest
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -37,12 +41,54 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 go build ./cmd/loopy
 
-      - name: PTY smoke test the monitor
-        run: |
-          sudo apt-get update -q && sudo apt-get install -y -q expect
-          make tui-smoke
+      - name: Install expect (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q expect
 
-      - name: Cross-compile release targets
+      - name: PTY smoke test the monitor
+        run: make tui-smoke
+
+      - name: Demo end to end (no API keys)
+        run: scripts/demo.sh
+
+  # Windows support is build-verified, not test-verified: the engine shells
+  # out to `sh`, which CI runners only have via Git Bash. Honest claim in
+  # README; full Windows testing is tracked for post-v0.1.
+  windows-build:
+    name: Build (windows)
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./cmd/loopy
+        env:
+          CGO_ENABLED: "0"
+
+  cross-compile:
+    name: Cross-compile release targets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build all six targets
         run: |
           for target in "darwin amd64" "darwin arm64" "linux amd64" "linux arm64" "windows amd64" "windows arm64"; do
             read -r GOOS GOARCH <<<"$target"

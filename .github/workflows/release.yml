@@ -1,24 +1,52 @@
 name: Release
 
-# RC-first: cut v0.x.y-rc.1 (published as a prerelease), soak it, then cut
-# v0.x.y. The pipeline is identical; only the prerelease flag differs.
+# RC-first: cut v0.x.y-rc.N (published as a prerelease), soak it, then cut
+# v0.x.y. The pipeline is identical; stable releases additionally notify the
+# Homebrew tap. docs/releasing.md is the runbook.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     name: Build and publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release and upload assets
+      id-token: write     # sign build provenance attestations
+      attestations: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0 # the on-main check needs history
+
+      - name: Validate the tag
+        run: |
+          # Exact SemVer with optional rc suffix; anything else is a stray
+          # tag and must not release.
+          echo "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' || {
+            echo "::error::tag '$GITHUB_REF_NAME' is not vX.Y.Z or vX.Y.Z-rc.N — not releasing"
+            exit 1
+          }
+          # Releases come from main, nowhere else.
+          git fetch origin main --quiet
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::tagged commit $GITHUB_SHA is not on main — not releasing"
+            exit 1
+          }
+          # The changelog must know this version (RCs map to their stable section).
+          stable="${GITHUB_REF_NAME%%-rc.*}"
+          grep -q "^## \[$stable\]" CHANGELOG.md || {
+            echo "::error::CHANGELOG.md has no section for $stable"
+            exit 1
+          }
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -28,9 +56,32 @@ jobs:
           test -z "$(gofmt -l cmd internal)"
           go vet ./...
           go test ./... -count=1
+          go test -race ./...
+          CGO_ENABLED=0 go build ./cmd/loopy
+          sudo apt-get update -q && sudo apt-get install -y -q expect
+          make tui-smoke
+          scripts/demo.sh
 
       - name: Build archives
-        run: scripts/dist.sh "$GITHUB_REF_NAME"
+        run: |
+          scripts/dist.sh "$GITHUB_REF_NAME"
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+
+      - name: Check embedded version
+        run: |
+          tar -xzf "dist/loopy_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C /tmp loopy
+          got=$(/tmp/loopy version)
+          [ "$got" = "loopy $GITHUB_REF_NAME" ] || {
+            echo "::error::embedded version is '$got', want 'loopy $GITHUB_REF_NAME'"
+            exit 1
+          }
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
 
       - name: Generate homebrew formula
         run: scripts/homebrew-formula.sh "$GITHUB_REF_NAME" > dist/loopy.rb
@@ -43,7 +94,32 @@ jobs:
           case "$GITHUB_REF_NAME" in
             *-rc.*) prerelease="--prerelease" ;;
           esac
-          gh release create "$GITHUB_REF_NAME" $prerelease \
-            --title "loopy $GITHUB_REF_NAME" \
-            --generate-notes \
-            dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/loopy.rb
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > /tmp/notes.md
+          # Idempotent: a rerun after a partial failure updates the same
+          # release instead of failing on "already exists".
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber \
+              dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/loopy.rb
+            gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" $prerelease \
+              --title "loopy $GITHUB_REF_NAME" \
+              --notes-file /tmp/notes.md \
+              --verify-tag \
+              dist/*.tar.gz dist/*.zip dist/SHA256SUMS dist/loopy.rb
+          fi
+
+      - name: Notify the Homebrew tap (stable only)
+        if: ${{ !contains(github.ref_name, '-rc.') }}
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::TAP_GITHUB_TOKEN is not set — update the tap manually (see docs/releasing.md)"
+            exit 0
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TAP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/mjbarefo/homebrew-tap/dispatches \
+            -d "{\"event_type\":\"loopy-release\",\"client_payload\":{\"version\":\"$GITHUB_REF_NAME\"}}"

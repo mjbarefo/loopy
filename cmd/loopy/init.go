@@ -39,15 +39,17 @@ func handleInit(cwd string, args []string) error {
 }
 
 // detectedAgentSuggestions maps agent CLIs found on PATH to suggested
-// headless invocations. Suggestions, not gospel: the headless-flag matrix is
-// documented as untested in DESIGN.md.
+// headless invocations. The tested matrix lives in docs/agents.md — claude
+// and codex are exercised through real loops; gemini is still a suggestion.
 var detectedAgentSuggestions = []struct {
 	binary string
 	name   string
 	cmd    string
 }{
 	{"claude", "claude", "claude -p {prompt} --permission-mode acceptEdits"},
-	{"codex", "codex", "codex exec {prompt}"},
+	// Plain `codex exec` runs read-only and can't edit the worktree;
+	// --full-auto is the workspace-write, no-prompts mode.
+	{"codex", "codex", "codex exec --full-auto {prompt}"},
 	{"gemini", "gemini", "gemini -p {prompt} --yolo"},
 }
 

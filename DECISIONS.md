@@ -214,7 +214,51 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   three-step onboarding checklist. Verifier stage progression ("✗ test
   (2/3)") is the convergence signal in every timeline.
 
+- **2026-06-11 — MIT license, owner-approved.** crux is private with no
+  LICENSE, so there was no lineage to match; the owner picked MIT from a
+  recommendation (simplest terms, matches the Bubble Tea dependency,
+  friction-free for Homebrew). LICENSE, the formula, and the archives agree.
+
+- **2026-06-11 — Headless agent matrix is now tested, and codex needs
+  `--full-auto`.** Real loops on 2026-06-11: claude
+  (`claude -p {prompt} --permission-mode acceptEdits`) converged over four
+  feedback iterations; plain `codex exec {prompt}` runs read-only and parks
+  stuck ("workspace is mounted read-only"), `codex exec --full-auto
+  {prompt}` went green. `loopy init` suggestions and docs/agents.md updated;
+  gemini remains a labeled suggestion.
+
+- **2026-06-11 — CI claims match CI proof.** macOS runs the full gate
+  (tests, race, PTY smoke, demo) alongside Linux; Windows is build+vet only
+  because the engine shells out to `sh` — README says exactly that. Actions
+  are pinned by commit SHA.
+
+- **2026-06-11 — Release hardening: exact-SemVer tags from main, full gate,
+  attestations, no SBOM file.** The workflow refuses tags that aren't
+  vX.Y.Z[-rc.N], commits not on main, and versions missing from
+  CHANGELOG.md; it re-runs the complete gate (incl. race, PTY smoke, demo),
+  verifies the embedded version from an actual unpacked archive, signs
+  GitHub build-provenance attestations for every archive, and is idempotent
+  on rerun (upload --clobber + notes edit). No separate SBOM: the binaries
+  embed their module graph (`go version -m`), which can't drift from the
+  build.
+
+- **2026-06-11 — Homebrew: upstream-binary formula in a real tap; RCs never
+  reach it.** The formula installs the attested release archives (fast,
+  provenance-checkable) rather than building from source. Canonical tap
+  content lives in packaging/homebrew-tap/ (reviewable in this repo);
+  scripts/tap-bootstrap.sh assembles and publishes it. Stable releases
+  notify the tap via repository_dispatch with a fine-grained PAT
+  (TAP_GITHUB_TOKEN, Contents:rw on the tap only); the tap's update
+  workflow hard-rejects prerelease versions. Full cycle proven locally:
+  brew style/audit clean, install → `loopy v0.1.0` → test → uninstall →
+  reinstall via a local tap with mirrored archives.
+
+- **2026-06-11 — No shell completions or man pages in v0.1.** The CLI is
+  hand-rolled (no cobra); completions would be a second, hand-maintained
+  description of the command surface that will drift. `loopy help` and
+  subcommand `--help` are the contract. Revisit post-v0 if the surface
+  stabilizes.
+
 ## For the human
 
-- **License.** The repo has no LICENSE file. crux's license should probably be
-  matched, but publishing terms are yours. Reversible default taken: none yet.
+- ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -7,14 +7,21 @@ it; you **review** and the diff is yours to ship.
 
 ## 0. Install
 
-No binaries are published yet — build from source (Go 1.26+):
+Homebrew (macOS and Linux):
 
 ```bash
-git clone https://github.com/mjbarefo/loopy && cd loopy
-make build          # produces ./loopy
+brew install mjbarefo/tap/loopy
+loopy version
 ```
 
-Put `loopy` somewhere on your PATH, or use `go install ./cmd/loopy`.
+Or grab an archive from the
+[latest release](https://github.com/mjbarefo/loopy/releases/latest)
+(checksums in `SHA256SUMS`, provenance via `gh attestation verify`), or
+build from source (Go 1.26+):
+
+```bash
+go install github.com/mjbarefo/loopy/cmd/loopy@latest
+```
 
 ## 1. See one converge first (zero API keys, ~30 seconds)
 
@@ -46,9 +53,10 @@ loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" 
 
 The template variables (`{prompt}`, `{prompt_file}`, `{worktree}`,
 `{loop_id}`, `{goal}`, `{iteration}`) are always shell-quoted on expansion.
-The suggested flags are suggestions — test your agent's headless mode once
-before trusting it with a budget. Commit the `.gitignore` change: loops
-refuse to start from a dirty tree.
+[docs/agents.md](docs/agents.md) is the tested invocation matrix (Claude
+Code and Codex are exercised through real loops) — test any new agent once
+with a tiny goal before trusting it with a budget. Commit the `.gitignore`
+change: loops refuse to start while tracked files have uncommitted changes.
 
 ## 3. Start your first loop
 
@@ -86,10 +94,12 @@ Rules that protect you, always on:
 loopy watch          # in a second terminal
 ```
 
-The monitor: loop list on the left, detail on the right. `tab`/`1-4`
-switch between **live** (agent/verifier output tailing), **iterations**
-(the convergence timeline), **diff**, and **verifier**. `enter` drills in
-to scroll, `p` pauses at the next iteration boundary, `r` resumes, `a`
+The monitor: every loop on the left, most urgent first; the selected loop
+on the right. The default **overview** shows the iteration timeline (with
+how far through the verifier each iteration got), what the engine is doing
+right now, and the last feedback the agent saw. `tab`/`1-4` switch to
+**live** (the full output tail), **diff**, and **verifier**. `enter` drills
+in to scroll, `p` pauses at the next iteration boundary, `r` resumes, `a`
 aborts (with confirmation), `q` quits. The footer always shows the exact
 next command. For scripts and CI: `loopy watch --once` prints one plain
 frame; `loopy status --json` is the machine-readable view.
