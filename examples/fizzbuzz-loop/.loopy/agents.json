@@ -1,0 +1,8 @@
+{
+  "default": "fixer",
+  "agents": {
+    "fixer": {
+      "cmd": "sh /home/demo/project/agent.sh {prompt_file}"
+    }
+  }
+}

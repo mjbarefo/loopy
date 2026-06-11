@@ -1,0 +1,15 @@
+{
+  "loop_id": "make-fizzbuzz-pass-its-tests",
+  "decision": "accepted",
+  "green_at_decision": true,
+  "decided_at": "2026-06-11T15:30:35Z",
+  "goal": "make fizzbuzz pass its tests",
+  "agent": "fixer",
+  "iterations": 3,
+  "wall_clock": "1s",
+  "final_diff": "/home/demo/project/.loopy/loops/make-fizzbuzz-pass-its-tests/final-diff.patch",
+  "diff_bytes": 357,
+  "changed_files": [
+    "fizzbuzz.sh"
+  ]
+}

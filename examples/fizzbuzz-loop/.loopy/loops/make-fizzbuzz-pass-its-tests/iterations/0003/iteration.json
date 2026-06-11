@@ -1,0 +1,22 @@
+{
+  "index": 3,
+  "started_at": "2026-06-11T15:30:34Z",
+  "ended_at": "2026-06-11T15:30:35Z",
+  "wall_ms": 222,
+  "agent_exit": 0,
+  "agent_ms": 28,
+  "stages": [
+    {
+      "name": "verify",
+      "cmd": "sh ./test.sh",
+      "exit_code": 0,
+      "duration_ms": 43
+    }
+  ],
+  "green": true,
+  "diff_hash": "3e7352b82ae33f3e",
+  "diff_bytes": 357,
+  "changed_files": [
+    "fizzbuzz.sh"
+  ]
+}

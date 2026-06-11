@@ -1,4 +1,4 @@
-.PHONY: test vet build fmt race check tui-smoke
+.PHONY: test vet build fmt race check tui-smoke dist
 
 test:
 	go test ./...
@@ -6,6 +6,9 @@ test:
 tui-smoke:
 	CGO_ENABLED=0 go build -o /tmp/loopy-tui-smoke-bin ./cmd/loopy
 	expect scripts/tui-smoke.exp /tmp/loopy-tui-smoke-bin
+
+dist:
+	scripts/dist.sh
 
 race:
 	go test -race ./...
