@@ -56,11 +56,19 @@ func RenderStatus(v LoopView) string {
 const IterationRowHeader = "iter  result              agent      verify     diff"
 
 func RenderIterationRow(it IterationView) string {
-	label := fmt.Sprintf("%d", it.Index)
+	label, verdict, metrics := RenderIterationRowParts(it)
+	return fmt.Sprintf("%-5s %s %s", label, PadDisplay(verdict, 18), metrics)
+}
+
+// RenderIterationRowParts returns the timeline row's column groups — label,
+// verdict, metrics — so styled renderers can accent the verdict without
+// re-deriving it. RenderIterationRow is their joined plain form.
+func RenderIterationRowParts(it IterationView) (label, verdict, metrics string) {
+	label = fmt.Sprintf("%d", it.Index)
 	if it.Baseline {
 		label = "base"
 	}
-	verdict := "✓ green"
+	verdict = "✓ green"
 	switch {
 	case it.Violation:
 		verdict = "✗ forbidden"
@@ -81,12 +89,11 @@ func RenderIterationRow(it IterationView) string {
 			agent += fmt.Sprintf("·exit %d", *it.AgentExit)
 		}
 	}
-	return fmt.Sprintf("%-5s %s %s %s %s",
-		label,
-		PadDisplay(verdict, 18),
+	metrics = fmt.Sprintf("%s %s %s",
 		PadDisplay(agent, 10),
 		PadDisplay(humanDuration(time.Duration(it.VerifyMS)*time.Millisecond), 10),
 		renderDiffCell(it))
+	return label, verdict, metrics
 }
 
 func renderDiffCell(it IterationView) string {
