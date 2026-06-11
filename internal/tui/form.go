@@ -111,7 +111,7 @@ func formLines(s frameState, width int) []cell {
 	}
 	cursor := "▏"
 	lines = append(lines, joinCells(
-		plainCell("goal  "),
+		styled(s.color, sgrDim, "goal  "),
 		plainCell(loop.TruncateDisplay(f.goal, width-8)),
 		styled(s.color, sgrCyan, cursor),
 	))

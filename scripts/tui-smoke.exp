@@ -42,9 +42,11 @@ note "wide 120x36 with color"
 unset -nocomplain env(NO_COLOR)
 set stty_init "rows 36 columns 120"
 spawn $bin watch
+# The identity lockup: the ∞ mark ahead of the wordmark (SGR codes sit
+# between the cells in a color PTY).
 expect {
-    -ex " loopy" {}
-    timeout { fail "wide: header never appeared" }
+    -re {∞ (\x1b\[[0-9;]*m)*loopy} {}
+    timeout { fail "wide: header lockup never appeared" }
 }
 expect {
     -ex "park-immediately" {}
@@ -153,8 +155,9 @@ expect {
     timeout { fail "fresh: onboarding never offered init" }
 }
 send "i"
+# The done-check is a green cell of its own; SGR codes precede the ✓.
 expect {
-    -ex "initialize the repo ✓" {}
+    -re {initialize the repo (\x1b\[[0-9;]*m)*✓} {}
     timeout { fail "fresh: i did not initialize the repo" }
 }
 send "q"

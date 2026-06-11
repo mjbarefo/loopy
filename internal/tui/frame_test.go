@@ -107,6 +107,48 @@ func TestFrameColorOnKeepsGlyphs(t *testing.T) {
 	}
 }
 
+// TestFrameIdentityAccents pins the visual identity: the ∞ lockup in the
+// header, dim chrome, cyan-bold active tab (no inverse video), and status
+// color in exactly one place per row — the rail glyph and the verdict cell,
+// never the whole line.
+func TestFrameIdentityAccents(t *testing.T) {
+	s := wideState()
+	s.color = true
+	frame := renderFrame(s)
+
+	if !strings.Contains(frame, "\x1b[36m ∞ \x1b[0m\x1b[1mloopy\x1b[0m") {
+		t.Error("header missing the cyan ∞ mark + bold wordmark lockup")
+	}
+	if strings.Contains(frame, "\x1b[7m") {
+		t.Error("inverse video crept back in; the active tab is cyan-bold")
+	}
+	if !strings.Contains(frame, "\x1b[1;36m[overview]\x1b[0m") {
+		t.Error("active tab should be cyan-bold")
+	}
+	if !strings.Contains(frame, "\x1b[2m"+rule(8)) {
+		t.Error("rules should be dim chrome")
+	}
+	// Selected rail row: cyan cursor, colored glyph, bold ID — three cells,
+	// not one painted line.
+	if !strings.Contains(frame, "\x1b[36m▶ \x1b[0m") {
+		t.Error("selection cursor should be its own cyan cell")
+	}
+	if !strings.Contains(frame, "\x1b[1mfix-csv-quoting") {
+		t.Error("selected rail ID should be bold, outside the status color")
+	}
+	// Unselected parked row: red glyph, plain ID.
+	if !strings.Contains(frame, "\x1b[31m✗\x1b[0m flaky-importer") {
+		t.Error("rail status color belongs on the glyph only")
+	}
+	// Timeline rows: the verdict cell carries the color, the metrics do not.
+	if !strings.Contains(frame, "\x1b[32m✓ green") {
+		t.Error("green verdict cell should be green")
+	}
+	if !strings.Contains(frame, "\x1b[0m 1m1s") {
+		t.Error("iteration metrics should sit outside the verdict's color span")
+	}
+}
+
 func TestFrameOverviewAnswersTheQuestions(t *testing.T) {
 	frame := renderFrame(wideState())
 	for _, want := range []string{
