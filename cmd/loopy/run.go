@@ -172,7 +172,7 @@ func progressEvents() loop.Events {
 				}
 			case loop.StatusParked:
 				fmt.Printf("%s loop %s parked: %s\n", colorize(red, "✗"), l.ID, l.ParkedReason)
-				fmt.Printf("next: loopy log %s\n", l.ID)
+				fmt.Printf("next: loopy review %s\n", l.ID)
 			}
 		},
 	}

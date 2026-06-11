@@ -53,7 +53,7 @@ expect {
 # The footer always carries the exact next command (it wins the space fight
 # over the key hints).
 expect {
-    -ex "next: loopy log" {}
+    -ex "next: loopy review" {}
     timeout { fail "wide: footer never showed the next command" }
 }
 if {![has_color $expect_out(buffer)]} { fail "wide: expected color in a color-capable PTY" }
