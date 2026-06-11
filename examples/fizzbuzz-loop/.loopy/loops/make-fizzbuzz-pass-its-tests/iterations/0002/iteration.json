@@ -1,0 +1,25 @@
+{
+  "index": 2,
+  "started_at": "2026-06-11T15:30:34Z",
+  "ended_at": "2026-06-11T15:30:34Z",
+  "wall_ms": 181,
+  "agent_exit": 0,
+  "agent_ms": 26,
+  "stages": [
+    {
+      "name": "verify",
+      "cmd": "sh ./test.sh",
+      "exit_code": 1,
+      "duration_ms": 45
+    }
+  ],
+  "green": false,
+  "failing_stage": "verify",
+  "feedback_tail": "fizzbuzz(15): want fizzbuzz, got number",
+  "tail_hash": "4de2363bc3a5cdff",
+  "diff_hash": "bb0afebc033fbcde",
+  "diff_bytes": 324,
+  "changed_files": [
+    "fizzbuzz.sh"
+  ]
+}

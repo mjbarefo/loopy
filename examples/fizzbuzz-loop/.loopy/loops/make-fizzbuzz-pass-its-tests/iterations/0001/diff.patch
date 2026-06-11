@@ -1,0 +1,13 @@
+diff --git a/fizzbuzz.sh b/fizzbuzz.sh
+index 6998e7e..63f4189 100644
+--- a/fizzbuzz.sh
++++ b/fizzbuzz.sh
+@@ -3,7 +3,7 @@ n="$1"
+ if [ $((n % 15)) -eq 0 ]; then
+   echo "number"
+ elif [ $((n % 3)) -eq 0 ]; then
+-  echo "fiz"
++  echo "fizz"
+ elif [ $((n % 5)) -eq 0 ]; then
+   echo "buz"
+ else

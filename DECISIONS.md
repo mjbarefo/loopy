@@ -154,6 +154,19 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   written. Dogfooding is the development model now: any task with a crisp
   verifier should go through a loop.
 
+- **2026-06-11 — RC-first releases via tag push; the formula is a release
+  asset.** Tagging `v0.x.y-rc.N` publishes a prerelease, `v0.x.y` a release;
+  same pipeline (gate → six CGO-free archives → SHA256SUMS → generated
+  homebrew formula). The formula is attached to the release rather than
+  pushed to a tap — creating the tap repo and the first tag are the human's
+  moves.
+
+- **2026-06-11 — `examples/fizzbuzz-loop/.loopy` is the demo's real output,
+  path-scrubbed.** A hand-written sample would drift; this one regenerates
+  from `scripts/demo.sh` and only rewrites the throwaway repo path. The
+  repo's own `.gitignore` entry was root-anchored (`/.loopy/`) so the
+  example state can be committed — `loopy init` accepts the anchored form.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be

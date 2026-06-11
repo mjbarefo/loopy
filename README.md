@@ -156,11 +156,17 @@ What works today:
   dependency-manifest changes and overlapping files, and "no safe winner"
   is a legitimate verdict. `loopy judge <id> <id>` re-ranks any finished
   loops; race verdicts persist under `.loopy/races/`.
+- **The release pipeline**: RC-first tags (`v0.x.y-rc.N` → prerelease),
+  six CGO-free archives + checksums + a generated homebrew formula per
+  release (`make dist` builds them locally), and
+  `examples/fizzbuzz-loop/` — a complete, readable `.loopy/` state tree
+  from a real run.
 - The demo: `scripts/demo.sh`, no API keys, now running the full cycle
   through accept and the logbook.
 
 What doesn't exist yet (in design order — see `DESIGN.md`):
-- **Releases** (binaries, homebrew) are M4 — build from source for now.
+- A first tagged release — the pipeline is ready; cutting `v0.1.0-rc.1` is
+  the human's call. Until then, build from source.
 - The headless agent matrix (exact flags per agent CLI) is documented as
   suggestions, not yet systematically tested.
 

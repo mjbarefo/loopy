@@ -1,0 +1,27 @@
+{
+  "id": "make-fizzbuzz-pass-its-tests",
+  "goal": "make fizzbuzz pass its tests",
+  "agent": "fixer",
+  "verifier": [
+    {
+      "name": "verify",
+      "cmd": "sh ./test.sh"
+    }
+  ],
+  "budget": {
+    "max_iterations": 6,
+    "max_wall_clock": "30m0s"
+  },
+  "stuck": {
+    "same_failure_repeats": 3,
+    "no_change_repeats": 1
+  },
+  "status": "accepted",
+  "iterations_used": 3,
+  "wall_clock_used": "623ms",
+  "base_commit": "48542304f0a6e7ef1da47bf82faa35787ada8b91",
+  "branch": "loopy/make-fizzbuzz-pass-its-tests",
+  "worktree": "/home/demo/project/.loopy/worktrees/make-fizzbuzz-pass-its-tests",
+  "created_at": "2026-06-11T15:30:34Z",
+  "ended_at": "2026-06-11T15:30:35Z"
+}

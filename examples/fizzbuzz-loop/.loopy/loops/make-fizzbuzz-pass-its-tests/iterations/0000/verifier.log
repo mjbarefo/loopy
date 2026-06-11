@@ -1,0 +1,3 @@
+=== stage verify: sh ./test.sh
+fizzbuzz(3): want fizz, got fiz
+=== stage verify: exit 1 (36ms)
