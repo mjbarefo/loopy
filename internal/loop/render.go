@@ -40,7 +40,7 @@ func RenderStatus(v LoopView) string {
 	if len(v.Iterations) > 0 {
 		b.WriteString("\n  iter      verdict            agent      verify     diff\n")
 		for _, it := range v.Iterations {
-			b.WriteString("  " + renderIterationRow(it) + "\n")
+			b.WriteString("  " + RenderIterationRow(it) + "\n")
 		}
 	}
 	if v.LastFeedback != "" && v.Status != StatusGreen {
@@ -55,7 +55,7 @@ func RenderStatus(v LoopView) string {
 	return b.String()
 }
 
-func renderIterationRow(it IterationView) string {
+func RenderIterationRow(it IterationView) string {
 	label := fmt.Sprintf("%d", it.Index)
 	if it.Baseline {
 		label = "base"
@@ -83,7 +83,7 @@ func renderDiffCell(it IterationView) string {
 	if it.DiffBytes == 0 {
 		return "none"
 	}
-	return fmt.Sprintf("%d file(s), %s", it.FilesChanged, humanBytes(it.DiffBytes))
+	return fmt.Sprintf("%d file(s), %s", it.FilesChanged, HumanBytes(it.DiffBytes))
 }
 
 // RenderIterationDetail is `loopy log <id> --iter N`: the iteration's record
@@ -140,7 +140,7 @@ func tailLines(s string, n int) []string {
 	return lines
 }
 
-func humanBytes(n int) string {
+func HumanBytes(n int) string {
 	switch {
 	case n >= 1<<20:
 		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))

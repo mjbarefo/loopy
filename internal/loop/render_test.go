@@ -19,8 +19,8 @@ func TestHumanBytes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := humanBytes(tc.n); got != tc.want {
-				t.Errorf("humanBytes(%d) = %q, want %q", tc.n, got, tc.want)
+			if got := HumanBytes(tc.n); got != tc.want {
+				t.Errorf("HumanBytes(%d) = %q, want %q", tc.n, got, tc.want)
 			}
 		})
 	}

@@ -138,3 +138,28 @@ func TestListLoopsSortedByCreation(t *testing.T) {
 		t.Fatalf("order wrong: %+v", loops)
 	}
 }
+
+func TestLoadIterationsSkipsInFlight(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := InitProject(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveIteration(root, "demo", Iteration{Index: 0, Green: false}); err != nil {
+		t.Fatal(err)
+	}
+	// The engine creates the next evidence directory before the record
+	// exists; readers must keep working while the iteration is in flight.
+	if err := os.MkdirAll(IterationDir(root, "demo", 1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(IterationDir(root, "demo", 1), AgentLogFile), []byte("working…\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iterations, err := LoadIterations(root, "demo")
+	if err != nil {
+		t.Fatalf("LoadIterations with an in-flight iteration: %v", err)
+	}
+	if len(iterations) != 1 || iterations[0].Index != 0 {
+		t.Fatalf("want only the recorded iteration, got %+v", iterations)
+	}
+}
