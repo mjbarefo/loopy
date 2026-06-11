@@ -145,6 +145,21 @@ type AgentRegistry struct {
 	Agents  map[string]Agent `json:"agents"`
 }
 
+// Engine phases, recorded in .loopy/loops/<id>/phase.json while a phase runs.
+const (
+	PhaseAgent  = "agent"
+	PhaseVerify = "verify"
+)
+
+// Phase is the engine's live activity record: which iteration it is on, what
+// it is doing, and since when. Ephemeral — cleared at iteration boundaries
+// and engine exit; only meaningful while an engine holds the loop's lock.
+type Phase struct {
+	Iteration int    `json:"iteration"`
+	Phase     string `json:"phase"`
+	StartedAt string `json:"started_at"`
+}
+
 // Control is the monitor→engine channel at .loopy/loops/<id>/control.json.
 // The engine polls it between phases; abort is additionally watched during
 // agent and verifier runs.

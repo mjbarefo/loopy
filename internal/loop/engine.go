@@ -131,7 +131,10 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 	if err := AcquireEngineLock(root, loopID); err != nil {
 		return Loop{}, err
 	}
-	defer func() { _ = ReleaseEngineLock(root, loopID) }()
+	defer func() {
+		_ = ClearPhase(root, loopID)
+		_ = ReleaseEngineLock(root, loopID)
+	}()
 
 	l, err := LoadLoop(root, loopID)
 	if err != nil {
@@ -234,6 +237,7 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 		iterations = append(iterations, it)
 		l.IterationsUsed++
 		l.WallClockUsed += Duration(it.durationOrZero())
+		_ = ClearPhase(root, l.ID)
 		if err := SaveLoop(root, l); err != nil {
 			return l, err
 		}
@@ -260,6 +264,7 @@ func runBaseline(root string, l Loop, ev Events) (Iteration, error) {
 	}
 	ctx, stop := watchAbort(root, l.ID)
 	defer stop()
+	_ = WritePhase(root, l.ID, Phase{Iteration: 0, Phase: PhaseVerify, StartedAt: it.StartedAt})
 	outcome, err := verifyToLog(ctx, l, dir, 0, ev)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return it, err
@@ -310,6 +315,7 @@ func runIteration(root string, l Loop, agent Agent, index int, prev *Iteration, 
 	// Agent phase.
 	ctx, stop := watchAbort(root, l.ID)
 	defer stop()
+	_ = WritePhase(root, l.ID, Phase{Iteration: index, Phase: PhaseAgent, StartedAt: utcNowISO()})
 	agentLog, err := os.OpenFile(filepath.Join(dir, AgentLogFile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return it, false, err
@@ -361,6 +367,7 @@ func runIteration(root string, l Loop, agent Agent, index int, prev *Iteration, 
 	}
 
 	// Verifier phase.
+	_ = WritePhase(root, l.ID, Phase{Iteration: index, Phase: PhaseVerify, StartedAt: utcNowISO()})
 	outcome, verr := verifyToLog(ctx, l, dir, index, ev)
 	if verr != nil && !errors.Is(verr, context.Canceled) {
 		return it, false, verr
