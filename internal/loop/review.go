@@ -90,8 +90,11 @@ func Accept(root, loopID string, override bool, reason string) (Review, error) {
 
 	r := newReview(l, DecisionAccepted, green, override && !green, reason)
 
-	// The durable diff: the last iteration that changed anything.
-	if it, ok := lastChangedIteration(root, l); ok {
+	it, ok, err := lastChangedIteration(root, l)
+	if err != nil {
+		return Review{}, err
+	}
+	if ok {
 		diff, err := os.ReadFile(filepath.Join(IterationDir(root, l.ID, it.Index), DiffFile))
 		if err != nil {
 			return Review{}, err
@@ -182,15 +185,15 @@ func recordDecision(root string, l Loop, r Review) error {
 
 // lastChangedIteration finds the newest iteration that actually changed the
 // worktree (a green-at-baseline loop has none).
-func lastChangedIteration(root string, l Loop) (Iteration, bool) {
+func lastChangedIteration(root string, l Loop) (Iteration, bool, error) {
 	iterations, err := LoadIterations(root, l.ID)
 	if err != nil {
-		return Iteration{}, false
+		return Iteration{}, false, err
 	}
 	for i := len(iterations) - 1; i >= 0; i-- {
 		if iterations[i].DiffBytes > 0 {
-			return iterations[i], true
+			return iterations[i], true, nil
 		}
 	}
-	return Iteration{}, false
+	return Iteration{}, false, nil
 }

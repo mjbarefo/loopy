@@ -5,7 +5,6 @@
 package tui
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -137,11 +136,5 @@ func errText(err error) string {
 	if err == nil {
 		return ""
 	}
-	var msg string
-	if errors.Is(err, loop.ErrNotInitialized) {
-		msg = loop.ErrNotInitialized.Error()
-	} else {
-		msg = err.Error()
-	}
-	return msg
+	return err.Error()
 }

@@ -106,6 +106,22 @@ func TestAcceptParkedNeedsOverrideWithReason(t *testing.T) {
 	}
 }
 
+func TestAcceptRefusesUnreadableIterationEvidence(t *testing.T) {
+	root := newLoopProject(t, "echo done > done.txt")
+	l := greenLoop(t, root)
+
+	path := filepath.Join(IterationDir(root, l.ID, 1), iterFile)
+	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Accept(root, l.ID, false, ""); err == nil {
+		t.Fatal("Accept should fail when iteration evidence is unreadable")
+	}
+	if _, ok, err := LoadReview(root, l.ID); err != nil || ok {
+		t.Fatalf("failed acceptance must not record a review: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestDecisionsRefuseMovingOrDecidedLoops(t *testing.T) {
 	root := newLoopProject(t, "echo done > done.txt")
 	l := greenLoop(t, root)
