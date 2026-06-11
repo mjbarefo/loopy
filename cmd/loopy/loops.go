@@ -21,7 +21,7 @@ func handleList(cwd string, args []string) error {
 	if err := loop.EnsureInitialized(root); err != nil {
 		return err
 	}
-	loops, err := loop.ListLoops(root)
+	loops, broken, err := loop.ListLoops(root)
 	if err != nil {
 		return err
 	}
@@ -34,14 +34,20 @@ func handleList(cwd string, args []string) error {
 		views = append(views, v)
 	}
 	if asJSON {
-		return printJSON(views)
+		return printJSON(struct {
+			Loops  []loop.LoopView   `json:"loops"`
+			Broken []loop.BrokenLoop `json:"broken,omitempty"`
+		}{views, broken})
 	}
-	if len(views) == 0 {
+	if len(views) == 0 && len(broken) == 0 {
 		fmt.Println("no loops yet — start one: loopy \"<goal>\"")
 		return nil
 	}
 	for _, v := range views {
 		fmt.Println(loop.RenderLoopLine(v))
+	}
+	for _, b := range broken {
+		fmt.Fprintf(os.Stderr, "warning: loop %s state unreadable — see `loopy doctor` (%s)\n", b.ID, b.Err)
 	}
 	return nil
 }
@@ -50,8 +56,14 @@ func handleStatus(cwd string, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(discard{})
 	asJSON := fs.Bool("json", false, "machine-readable output")
-	if err := fs.Parse(args); err != nil {
+	// The loop ID may come before the flags; stdlib flag parsing stops at the
+	// first positional argument, so peel it off first.
+	loopID, rest := splitLeadingID(args)
+	if err := fs.Parse(rest); err != nil {
 		return usageError{err}
+	}
+	if loopID == "" {
+		loopID = fs.Arg(0)
 	}
 	root, err := projectRoot(cwd)
 	if err != nil {
@@ -61,10 +73,9 @@ func handleStatus(cwd string, args []string) error {
 		return err
 	}
 
-	loopID := fs.Arg(0)
 	if loopID == "" {
 		// No ID: most recent loop, the one you're most likely watching.
-		loops, err := loop.ListLoops(root)
+		loops, _, err := loop.ListLoops(root)
 		if err != nil {
 			return err
 		}
@@ -93,12 +104,8 @@ func handleLog(cwd string, args []string) error {
 	fs.SetOutput(discard{})
 	iterFlag := fs.Int("iter", -1, "show one iteration in detail")
 	asJSON := fs.Bool("json", false, "machine-readable output")
-	var loopID string
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		loopID = args[0]
-		args = args[1:]
-	}
-	if err := fs.Parse(args); err != nil {
+	loopID, rest := splitLeadingID(args)
+	if err := fs.Parse(rest); err != nil {
 		return usageError{err}
 	}
 	if loopID == "" && fs.NArg() > 0 {
@@ -194,12 +201,8 @@ func handleAbort(cwd string, args []string) error {
 	fs := flag.NewFlagSet("abort", flag.ContinueOnError)
 	fs.SetOutput(discard{})
 	reason := fs.String("reason", "", "why the loop is being aborted (recorded verbatim)")
-	var loopID string
-	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		loopID = args[0]
-		args = args[1:]
-	}
-	if err := fs.Parse(args); err != nil {
+	loopID, rest := splitLeadingID(args)
+	if err := fs.Parse(rest); err != nil {
 		return usageError{err}
 	}
 	if loopID == "" && fs.NArg() > 0 {
