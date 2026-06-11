@@ -31,7 +31,7 @@ func TestDisplayWidth(t *testing.T) {
 		{"·", 1},   // ambiguous: narrow
 		{"●", 1},   // ambiguous: narrow
 		{"│┌┴", 3}, // box drawing: narrow
-		{"mixed 引用 and 🌀", 16},
+		{"mixed 引用 and 🌀", 17},
 	}
 	for _, c := range cases {
 		if got := DisplayWidth(c.in); got != c.want {
