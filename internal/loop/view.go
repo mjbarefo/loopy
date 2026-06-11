@@ -19,6 +19,10 @@ type IterationView struct {
 	VerifyMS     int64  `json:"verify_ms,omitempty"`
 	DiffBytes    int    `json:"diff_bytes"`
 	FilesChanged int    `json:"files_changed"`
+	// StagesPassed/StagesTotal show how far through the verifier the
+	// iteration got — the convergence signal for multi-stage verifiers.
+	StagesPassed int `json:"stages_passed"`
+	StagesTotal  int `json:"stages_total"`
 }
 
 // LoopView is the shared view-model: everything the plain renderer (and the
@@ -31,7 +35,12 @@ type LoopView struct {
 	// Live reports whether an engine process currently holds this loop's
 	// lock — "running" status with no live engine means a crashed or
 	// backgrounded loop that needs `loopy resume`.
-	Live           bool            `json:"live,omitempty"`
+	Live bool `json:"live,omitempty"`
+	// Phase is the live engine's current activity ("agent", "verify"); empty
+	// when no engine is live or it is between iterations.
+	Phase          string          `json:"phase,omitempty"`
+	PhaseIteration int             `json:"phase_iteration,omitempty"`
+	PhaseStartedAt string          `json:"phase_started_at,omitempty"`
 	ParkedReason   string          `json:"parked_reason,omitempty"`
 	IterationsUsed int             `json:"iterations_used"`
 	MaxIterations  int             `json:"max_iterations"`
@@ -47,13 +56,20 @@ type LoopView struct {
 	EndedAt        string          `json:"ended_at,omitempty"`
 }
 
-// BuildLoopView assembles the view-model for one loop from disk.
+// BuildLoopView assembles the view-model for one loop from disk. Corrupt
+// iteration records degrade the view (they are skipped) rather than failing
+// it; `loopy doctor` reports them.
 func BuildLoopView(root string, l Loop) (LoopView, error) {
-	iterations, err := LoadIterations(root, l.ID)
+	iterations, _, err := LoadIterationsLenient(root, l.ID)
 	if err != nil {
 		return LoopView{}, err
 	}
 	_, live, _ := EngineLockState(root, l.ID)
+	var phase Phase
+	var phaseKnown bool
+	if live {
+		phase, phaseKnown, _ = ReadPhase(root, l.ID)
+	}
 	view := LoopView{
 		ID:             l.ID,
 		Goal:           l.Goal,
@@ -63,17 +79,26 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 		ParkedReason:   l.ParkedReason,
 		IterationsUsed: l.IterationsUsed,
 		MaxIterations:  l.Budget.MaxIterations,
-		WallClockUsed:  time.Duration(l.WallClockUsed).Round(time.Second).String(),
-		MaxWallClock:   time.Duration(l.Budget.MaxWallClock).String(),
+		WallClockUsed:  HumanDuration(time.Duration(l.WallClockUsed)),
+		MaxWallClock:   HumanDuration(time.Duration(l.Budget.MaxWallClock)),
 		Verifier:       l.Verifier,
 		Worktree:       l.Worktree,
 		CreatedAt:      l.CreatedAt,
 		EndedAt:        l.EndedAt,
 	}
+	if phaseKnown {
+		view.Phase = phase.Phase
+		view.PhaseIteration = phase.Iteration
+		view.PhaseStartedAt = phase.StartedAt
+	}
 	for _, it := range iterations {
 		var verifyMS int64
+		passed := 0
 		for _, s := range it.Stages {
 			verifyMS += s.DurationMS
+			if s.ExitCode == 0 {
+				passed++
+			}
 		}
 		view.Iterations = append(view.Iterations, IterationView{
 			Index:        it.Index,
@@ -86,6 +111,8 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 			VerifyMS:     verifyMS,
 			DiffBytes:    it.DiffBytes,
 			FilesChanged: len(it.ChangedFiles),
+			StagesPassed: passed,
+			StagesTotal:  len(l.Verifier),
 		})
 	}
 	if len(iterations) > 0 {

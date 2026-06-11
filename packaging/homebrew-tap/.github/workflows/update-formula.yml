@@ -1,0 +1,52 @@
+name: Update formula
+
+# Fired by loopy's release workflow on stable releases via
+# repository_dispatch; can also be run by hand for recovery.
+on:
+  repository_dispatch:
+    types: [loopy-release]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "loopy release tag (vX.Y.Z, stable only)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ github.event.client_payload.version || inputs.version }}"
+          echo "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::'$version' is not a stable vX.Y.Z tag — RCs never reach the tap"
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check out tap
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Fetch the generated formula from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release download "$VERSION" --repo mjbarefo/loopy \
+            --pattern loopy.rb --output Formula/loopy.rb --clobber
+          ruby -c Formula/loopy.rb
+
+      - name: Commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "loopy-release-bot"
+          git config user.email "noreply@github.com"
+          git add Formula/loopy.rb
+          git diff --cached --quiet && { echo "formula unchanged"; exit 0; }
+          git commit -m "loopy $VERSION"
+          git push

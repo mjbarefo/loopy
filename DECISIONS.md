@@ -167,7 +167,114 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   repo's own `.gitignore` entry was root-anchored (`/.loopy/`) so the
   example state can be committed — `loopy init` accepts the anchored form.
 
+- **2026-06-11 — Dirty-repo refusal ignores untracked files.** Loop worktrees
+  branch from HEAD and never see untracked files, so they can't make a diff
+  unreproducible; refusing on them blocked loops for any repo with a stray
+  scratch file. Only modified tracked files refuse, and the error names them.
+
+- **2026-06-11 — One corrupt loop.json degrades, never bricks.** `ListLoops`
+  skips unreadable loop state and reports it (`list` warns on stderr, the
+  monitor shows the broken entry, doctor gives the exact repair command)
+  instead of failing every command for every loop. Same for corrupt
+  iteration.json in views; the engine stays strict — it must not resume on
+  silently missing history.
+
+- **2026-06-11 — The engine publishes phase.json while a phase runs.** The
+  monitor used to guess "what is it doing" from log mtimes; now the engine
+  (still the single writer) records {iteration, phase: agent|verify,
+  started_at} at phase starts and clears it at boundaries. Ephemeral; only
+  meaningful while the engine lock is held.
+
+- **2026-06-11 — `list --json` emits {loops, broken}, not a bare array.**
+  Damaged state must be visible to scripts too, and a wrapper object can
+  grow fields without breaking consumers. Decided before the first release,
+  while the JSON contract is still free.
+
+- **2026-06-11 — Layout truncation is display-width aware.** `loopy list`
+  byte-sliced goals (cutting UTF-8 mid-rune) and the monitor counted runes
+  (CJK/emoji broke frame alignment). DisplayWidth/TruncateDisplay/PadDisplay
+  in internal/loop are the only truncation primitives now. Implemented by a
+  loopy loop (claude agent); the loop parked red because the hand-written
+  test fixture had an off-by-one the agent was forbidden to fix — it
+  diagnosed the bad vector in a comment instead. Accepted with the audited
+  override; the fixture fix is recorded in the loop's review.json.
+
+- **2026-06-11 — Monitor redesign: overview-first, open layout.** The M2
+  monitor defaulted to a live tail that is blank for quiet agents and packed
+  its facts into a box border. The redesign makes the overview the default
+  tab (timeline + activity + feedback + a short live tail), adds an activity
+  line driven by phase.json ("now: agent running · iter 3 · 1m32s"), sorts
+  the rail by what needs eyes (live → paused → stale → green → parked →
+  decided, newest first within a group) and defaults selection to the top,
+  sizes the rail to its content, replaces box chrome with rules (more
+  content rows, fewer padding bugs), drops whole footer key hints instead of
+  cutting words, and suppresses the circular "next: loopy watch <id>" inside
+  the live monitor. `--once` keeps the next command and omits key hints.
+  The mascot lives only in the empty state, which is now a tailored
+  three-step onboarding checklist. Verifier stage progression ("✗ test
+  (2/3)") is the convergence signal in every timeline.
+
+- **2026-06-11 — MIT license, owner-approved.** crux is private with no
+  LICENSE, so there was no lineage to match; the owner picked MIT from a
+  recommendation (simplest terms, matches the Bubble Tea dependency,
+  friction-free for Homebrew). LICENSE, the formula, and the archives agree.
+
+- **2026-06-11 — Headless agent matrix is now tested, and codex needs
+  `--full-auto`.** Real loops on 2026-06-11: claude
+  (`claude -p {prompt} --permission-mode acceptEdits`) converged over four
+  feedback iterations; plain `codex exec {prompt}` runs read-only and parks
+  stuck ("workspace is mounted read-only"), `codex exec --full-auto
+  {prompt}` went green. `loopy init` suggestions and docs/agents.md updated;
+  gemini remains a labeled suggestion.
+
+- **2026-06-11 — CI claims match CI proof.** macOS runs the full gate
+  (tests, race, PTY smoke, demo) alongside Linux; Windows is build+vet only
+  because the engine shells out to `sh` — README says exactly that. Actions
+  are pinned by commit SHA.
+
+- **2026-06-11 — Release hardening: exact-SemVer tags from main, full gate,
+  attestations, no SBOM file.** The workflow refuses tags that aren't
+  vX.Y.Z[-rc.N], commits not on main, and versions missing from
+  CHANGELOG.md; it re-runs the complete gate (incl. race, PTY smoke, demo),
+  verifies the embedded version from an actual unpacked archive, signs
+  GitHub build-provenance attestations for every archive, and is idempotent
+  on rerun (upload --clobber + notes edit). No separate SBOM: the binaries
+  embed their module graph (`go version -m`), which can't drift from the
+  build.
+
+- **2026-06-11 — Homebrew: upstream-binary formula in a real tap; RCs never
+  reach it.** The formula installs the attested release archives (fast,
+  provenance-checkable) rather than building from source. Canonical tap
+  content lives in packaging/homebrew-tap/ (reviewable in this repo);
+  scripts/tap-bootstrap.sh assembles and publishes it. Stable releases
+  notify the tap via repository_dispatch with a fine-grained PAT
+  (TAP_GITHUB_TOKEN, Contents:rw on the tap only); the tap's update
+  workflow hard-rejects prerelease versions. Full cycle proven locally:
+  brew style/audit clean, install → `loopy v0.1.0` → test → uninstall →
+  reinstall via a local tap with mirrored archives.
+
+- **2026-06-11 — No shell completions or man pages in v0.1.** The CLI is
+  hand-rolled (no cobra); completions would be a second, hand-maintained
+  description of the command surface that will drift. `loopy help` and
+  subcommand `--help` are the contract. Revisit post-v0 if the surface
+  stabilizes.
+
+- **2026-06-11 — Bare `loopy` launches the monitor; the whole first run
+  lives there.** On a terminal, `loopy` with no arguments opens the monitor
+  behind a welcome splash (logo, version, repo, counts — dismissed by any
+  key; pipes still get the help text). The empty state became executable
+  onboarding: `i` initializes the repo, digits register detected agent CLIs
+  (first one becomes the default), `n` opens the new-loop form. The form
+  resolves the verifier exactly like `loopy run` — project default, else
+  inference where *starting the loop is the confirmation* that stores it
+  (the CLI's confirm-once contract, same storage). Loop creation uses the
+  same domain call as the CLI and hands the loop to a detached engine via
+  the existing resume path, so the engine remains the single writer of loop
+  state and the monitor still only ever writes control.json plus the same
+  setup files the CLI writes (agents.json, config.json) on explicit user
+  action. Accept/reject stay in the audited CLI. `watch` and `--once` are
+  unchanged (no splash).
+
 ## For the human
 
-- **License.** The repo has no LICENSE file. crux's license should probably be
-  matched, but publishing terms are yours. Reversible default taken: none yet.
+- ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

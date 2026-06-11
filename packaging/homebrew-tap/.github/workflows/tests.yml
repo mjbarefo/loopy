@@ -1,0 +1,38 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Deliberately unpinned: Homebrew documents @master as the supported
+      # ref for this action and it must track brew itself.
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Style
+        run: brew style mjbarefo/tap
+
+      - name: Audit, install, test
+        run: |
+          if [ ! -f "$(brew --repository mjbarefo/tap)/Formula/loopy.rb" ]; then
+            echo "no formula yet — nothing to test"
+            exit 0
+          fi
+          brew audit --online --formula mjbarefo/tap/loopy
+          brew install mjbarefo/tap/loopy
+          brew test mjbarefo/tap/loopy
+          loopy version
+          brew uninstall loopy

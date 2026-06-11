@@ -360,3 +360,39 @@ func TestDetectStuckIgnoresBaseline(t *testing.T) {
 		t.Fatal("two identical agent failures should be stuck at threshold 2")
 	}
 }
+
+// TestEnginePhaseRecording: the engine publishes phase.json while a phase
+// runs (the agent observes "agent") and clears it when the loop ends.
+func TestEnginePhaseRecording(t *testing.T) {
+	// The agent copies the live phase record into the worktree, where the
+	// snapshot preserves it as evidence the test can assert on. The path
+	// travels via the environment: template variables expand shell-quoted,
+	// which would defeat the nested double quotes here.
+	agent := `cp "$LOOPY_PHASE_FILE" phase-seen.json 2>/dev/null; echo done >> log.txt`
+	root := newLoopProject(t, agent)
+
+	l := mustCreate(t, root, CreateOptions{
+		Goal:     "observe the phase file",
+		Verifier: []Stage{{Name: "check", Cmd: "test -f phase-seen.json"}},
+		Budget:   Budget{MaxIterations: 2},
+	})
+	t.Setenv("LOOPY_PHASE_FILE", filepath.Join(LoopDir(root, l.ID), "phase.json"))
+	final, err := RunEngine(root, l.ID, Events{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Status != StatusGreen {
+		t.Fatalf("status = %s (%s), want green", final.Status, final.ParkedReason)
+	}
+
+	var seen Phase
+	if err := ReadJSON(filepath.Join(WorktreePath(root, l.ID), "phase-seen.json"), &seen); err != nil {
+		t.Fatal(err)
+	}
+	if seen.Phase != PhaseAgent || seen.Iteration != 1 || seen.StartedAt == "" {
+		t.Fatalf("agent observed phase %+v, want agent/iteration 1", seen)
+	}
+	if _, found, _ := ReadPhase(root, l.ID); found {
+		t.Fatal("phase.json should be cleared after the loop ends")
+	}
+}

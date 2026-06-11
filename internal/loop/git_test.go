@@ -62,12 +62,26 @@ func TestWorktreeLifecycleAndSnapshot(t *testing.T) {
 	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
-	// .gitignore changed by init → dirty → refusal.
-	if _, _, _, err := CreateLoopWorktree(root, "my-loop"); err == nil {
+	// A modified tracked file refuses; the refusal names the offender.
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := CreateLoopWorktree(root, "my-loop")
+	if err == nil {
 		t.Fatal("expected dirty-repo refusal")
 	}
+	if !strings.Contains(err.Error(), "hello.txt") {
+		t.Fatalf("refusal should name the dirty file, got: %v", err)
+	}
+	mustGit(t, root, "checkout", "--", "hello.txt")
+
+	// Untracked files (init's new .gitignore among them) never block a loop:
+	// worktrees branch from HEAD and don't see them.
 	mustGit(t, root, "add", "-A")
 	mustGit(t, root, "commit", "-q", "-m", "init loopy")
+	if err := os.WriteFile(filepath.Join(root, "scratch.txt"), []byte("untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	wt, branch, base, err := CreateLoopWorktree(root, "my-loop")
 	if err != nil {

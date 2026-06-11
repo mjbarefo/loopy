@@ -130,12 +130,75 @@ func TestListLoopsSortedByCreation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	loops, err := ListLoops(root)
+	loops, broken, err := ListLoops(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(broken) != 0 {
+		t.Fatalf("unexpected broken loops: %+v", broken)
+	}
 	if len(loops) != 2 || loops[0].ID != "b-loop" || loops[1].ID != "a-loop" {
 		t.Fatalf("order wrong: %+v", loops)
+	}
+}
+
+func TestListLoopsToleratesCorruptState(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := InitProject(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveLoop(root, Loop{ID: "good-loop", CreatedAt: "2026-06-10T12:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	dir := LoopDir(root, "bad-loop")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "loop.json"), []byte("{ corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loops, broken, err := ListLoops(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loops) != 1 || loops[0].ID != "good-loop" {
+		t.Fatalf("good loop missing: %+v", loops)
+	}
+	if len(broken) != 1 || broken[0].ID != "bad-loop" || broken[0].Err == "" {
+		t.Fatalf("broken loop not reported: %+v", broken)
+	}
+}
+
+func TestLoadIterationsReportsCorruptRecords(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := InitProject(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveLoop(root, Loop{ID: "l", CreatedAt: "2026-06-10T12:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveIteration(root, "l", Iteration{Index: 0}); err != nil {
+		t.Fatal(err)
+	}
+	dir := IterationDir(root, "l", 1)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "iteration.json"), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadIterations(root, "l"); err == nil {
+		t.Fatal("strict LoadIterations should fail on a corrupt record")
+	}
+	iterations, damaged, err := LoadIterationsLenient(root, "l")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(iterations) != 1 || iterations[0].Index != 0 {
+		t.Fatalf("readable iteration missing: %+v", iterations)
+	}
+	if len(damaged) != 1 {
+		t.Fatalf("damaged record not reported: %+v", damaged)
 	}
 }
 

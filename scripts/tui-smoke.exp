@@ -43,12 +43,17 @@ unset -nocomplain env(NO_COLOR)
 set stty_init "rows 36 columns 120"
 spawn $bin watch
 expect {
-    -ex " loops " {}
-    timeout { fail "wide: loop list pane never appeared" }
+    -ex " loopy" {}
+    timeout { fail "wide: header never appeared" }
 }
 expect {
     -ex "park-immediately" {}
     timeout { fail "wide: loop id missing from the frame" }
+}
+# The overview is the default tab: the timeline row is visible immediately.
+expect {
+    -ex "✗ verify" {}
+    timeout { fail "wide: iteration timeline missing its verdict row" }
 }
 # The footer always carries the exact next command (it wins the space fight
 # over the key hints).
@@ -60,12 +65,8 @@ if {![has_color $expect_out(buffer)]} { fail "wide: expected color in a color-ca
 
 send "\t"
 expect {
-    -ex {[iterations]} {}
-    timeout { fail "wide: tab did not switch to the iterations view" }
-}
-expect {
-    -ex "✗ verify" {}
-    timeout { fail "wide: iteration timeline missing its verdict row" }
+    -ex {[live]} {}
+    timeout { fail "wide: tab did not switch to the live view" }
 }
 send "?"
 expect {
@@ -75,7 +76,7 @@ expect {
 send "q"
 expect eof
 
-# --- narrow 60x24: the loop list pane collapses ------------------------------
+# --- narrow 60x24: the loop rail collapses -----------------------------------
 note "narrow 60x24"
 set stty_init "rows 24 columns 60"
 spawn $bin watch
@@ -83,8 +84,8 @@ expect {
     -ex "park-immediately" {}
     timeout { fail "narrow: loop id missing from the frame" }
 }
-if {[string first "┬" $expect_out(buffer)] != -1} {
-    fail "narrow: list pane should collapse below 80 columns"
+if {[string first "│" $expect_out(buffer)] != -1} {
+    fail "narrow: rail should collapse below 80 columns"
 }
 send "q"
 expect eof
@@ -107,6 +108,59 @@ send "q"
 expect eof
 unset env(NO_COLOR)
 
+# --- bare launch: splash → monitor → new-loop form ---------------------------
+note "bare launch 100x30"
+set stty_init "rows 30 columns 100"
+spawn $bin
+expect {
+    -ex "engineer loops, not prompts" {}
+    timeout { fail "bare: welcome splash never appeared" }
+}
+send " "
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "bare: monitor never appeared after dismissing the splash" }
+}
+send "n"
+expect {
+    -ex "start a loop" {}
+    timeout { fail "bare: n never opened the new-loop form" }
+}
+# Typing itself is unit-tested (incremental redraws defeat substring matching
+# here); prove the form closes cleanly and the monitor comes back.
+send "\x1b"
+expect {
+    -ex "↑↓ loop" {}
+    timeout { fail "bare: esc did not close the form" }
+}
+send "q"
+expect eof
+
+# --- bare launch in an uninitialized repo: onboarding ------------------------
+note "bare launch, uninitialized repo"
+set fresh [exec mktemp -d /tmp/loopy-tui-smoke-fresh.XXXXXX]
+exec sh -c "cd '$fresh' && git init -q -b main && git config user.email smoke@loopy.local && git config user.name smoke && echo hi > README.md && git add . && git commit -qm init"
+cd $fresh
+set stty_init "rows 30 columns 100"
+spawn $bin
+expect {
+    -ex "engineer loops, not prompts" {}
+    timeout { fail "fresh: welcome splash never appeared" }
+}
+send " "
+expect {
+    -ex "press i" {}
+    timeout { fail "fresh: onboarding never offered init" }
+}
+send "i"
+expect {
+    -ex "initialize the repo ✓" {}
+    timeout { fail "fresh: i did not initialize the repo" }
+}
+send "q"
+expect eof
+cd $repo
+
 # --- a live loop: watch shows it running -------------------------------------
 note "live loop"
 exec sh -c "cd '$repo' && '$bin' agent add slow --cmd 'sleep 8' > /dev/null"
@@ -120,6 +174,8 @@ expect {
     -ex "running" {}
     timeout { fail "live: monitor never showed the loop running" }
 }
+# The live tab tails the current iteration's log.
+send "2"
 expect {
     -ex "agent.log" {}
     timeout { fail "live: the live view never tailed the agent log" }

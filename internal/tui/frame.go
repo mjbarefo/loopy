@@ -11,12 +11,27 @@ import (
 // live monitor and `watch --once` share it, so what scripts capture is what
 // humans see. Color is applied after plain-text layout and is never the only
 // signal — every verdict keeps its word or glyph.
-
+//
+// Layout (no box chrome; rules and one rail separator):
+//
+//	 loopy   1 running · 1 paused · 2 to review            ? help · q quit
+//	─────────────────────────────────────────────────────────────────────
+//	▶ ● fix-csv-quoting      2/8 │ ● fix-csv-quoting — running
+//	  ✓ green-deploy-docs    3/6 │ goal: make the importer handle …
+//	  ✗ flaky-importer       8/8 │ agent claude · wall 4m10s of 30m
+//	                             │ now: agent running · iter 3 · 1m32s
+//	                             │
+//	                             │ [overview]  live   diff   verifier
+//	                             │  iter  result        agent   verify  diff
+//	                             │  …
+//	─────────────────────────────────────────────────────────────────────
+//	 ↑↓ loop · enter drill · p pause · a abort · ? help    next: loopy …
 const (
 	minWidth      = 40
 	minHeight     = 8
-	collapseWidth = 80 // below this the loop list pane collapses away
-	leftPaneWidth = 21
+	collapseWidth = 80 // below this the loop rail collapses away
+	minRailWidth  = 22
+	maxRailWidth  = 34
 )
 
 // ANSI SGR codes. The TUI styles by hand instead of taking a styling
@@ -34,14 +49,27 @@ const (
 type frameState struct {
 	width, height int
 	color         bool
+	once          bool // deterministic single frame: no key hints, no elapsed
 
 	loops    []loop.LoopView
+	broken   []loop.BrokenLoop
 	selected int
 
-	focusDetail  bool
-	tab          tabID
-	scroll       int // -1 = follow the tail
-	art          artifact
+	// initialized/agentsRegistered/detected steer onboarding: the empty
+	// state offers the exact next step, executable in place.
+	initialized      bool
+	agentsRegistered bool
+	detected         []loop.AgentSuggestion
+
+	form formState
+
+	focusDetail bool
+	tab         tabID
+	scroll      int // -1 = follow the tail
+	art         artifact
+	// elapsed strings are precomputed by the model (they need a clock; the
+	// renderer must stay pure and deterministic).
+	phaseElapsed string
 	confirmAbort bool
 	flash        string
 	showHelp     bool
@@ -68,14 +96,47 @@ func styled(color bool, code, s string) cell {
 	return cell{plain: s, styled: paint(color, code, s)}
 }
 
+// joinCells concatenates cells into one, preserving styled segments.
+func joinCells(cells ...cell) cell {
+	var plain, stl strings.Builder
+	for _, c := range cells {
+		plain.WriteString(c.plain)
+		if c.styled != "" {
+			stl.WriteString(c.styled)
+		} else {
+			stl.WriteString(c.plain)
+		}
+	}
+	return cell{plain: plain.String(), styled: stl.String()}
+}
+
+// padCell pads (or truncates) a cell to exactly width visible columns.
+// Styling is dropped when truncation is needed — a cut escape sequence is
+// worse than a plain line.
+func padCell(c cell, width int) string {
+	w := loop.DisplayWidth(c.plain)
+	if w > width {
+		return loop.PadDisplay(c.plain, width)
+	}
+	out := c.plain
+	if c.styled != "" {
+		out = c.styled
+	}
+	return out + strings.Repeat(" ", width-w)
+}
+
+func rule(n int) string { return strings.Repeat("─", n) }
+
 func renderFrame(s frameState) string {
 	if s.width < minWidth || s.height < minHeight {
 		return fmt.Sprintf("terminal too small for the monitor (need at least %dx%d)\n", minWidth, minHeight)
 	}
 	wide := s.width >= collapseWidth
-	rightW := s.width - 2
-	if wide {
-		rightW = s.width - leftPaneWidth - 3
+	railW := 0
+	detailW := s.width - 1
+	if wide && (len(s.loops) > 0 || len(s.broken) > 0) {
+		railW = railWidth(s.loops, s.broken)
+		detailW = s.width - railW - 2 // separator column + leading space
 	}
 	contentRows := s.height - 4
 
@@ -84,34 +145,24 @@ func renderFrame(s frameState) string {
 		sel = &s.loops[s.selected]
 	}
 
-	right := rightLines(s, sel, rightW, contentRows)
-	var left []cell
-	if wide {
-		left = leftLines(s, contentRows)
+	detail := detailLines(s, sel, detailW, contentRows)
+	var rail []cell
+	if railW > 0 {
+		rail = railLines(s, railW, contentRows)
 	}
 
 	var b strings.Builder
-	// Top border carries the pane titles, like the design sketch.
-	title := titleCell(s, sel)
-	if wide {
-		b.WriteString("┌" + borderLabel(s, plainCell(" loops "), leftPaneWidth) + "┬" + borderLabel(s, title, rightW) + "┐\n")
-	} else {
-		b.WriteString("┌" + borderLabel(s, title, rightW) + "┐\n")
-	}
+	b.WriteString(padCell(headerCell(s), s.width) + "\n")
+	b.WriteString(rule(s.width) + "\n")
 	for i := 0; i < contentRows; i++ {
-		b.WriteString("│")
-		if wide {
-			b.WriteString(padCell(lineAt(left, i), leftPaneWidth) + "│")
+		if railW > 0 {
+			b.WriteString(padCell(lineAt(rail, i), railW))
+			b.WriteString("│")
 		}
-		b.WriteString(padCell(lineAt(right, i), rightW) + "│\n")
+		b.WriteString(" " + padCell(lineAt(detail, i), detailW) + "\n")
 	}
-	if wide {
-		b.WriteString("├" + dashes(leftPaneWidth) + "┴" + dashes(rightW) + "┤\n")
-	} else {
-		b.WriteString("├" + dashes(rightW) + "┤\n")
-	}
-	b.WriteString("│" + footerCell(s, sel, s.width-2) + "│\n")
-	b.WriteString("└" + dashes(s.width-2) + "┘\n")
+	b.WriteString(rule(s.width) + "\n")
+	b.WriteString(padCell(footerCell(s, sel, s.width), s.width) + "\n")
 	return b.String()
 }
 
@@ -122,45 +173,73 @@ func lineAt(lines []cell, i int) cell {
 	return cell{}
 }
 
-func dashes(n int) string { return strings.Repeat("─", n) }
-
-// borderLabel inlays a label into a horizontal border segment of the given
-// width (the label is truncated rather than ever widening the frame).
-func borderLabel(s frameState, label cell, width int) string {
-	runes := []rune(label.plain)
-	if len(runes) > width {
-		label = plainCell(string(runes[:width-1]) + "…")
-		runes = []rune(label.plain)
+// headerCell is the project pulse: how many loops are in each bucket.
+func headerCell(s frameState) cell {
+	var counts = map[string]int{}
+	live := 0
+	for _, v := range s.loops {
+		counts[v.Status]++
+		if v.Status == loop.StatusRunning && v.Live {
+			live++
+		}
 	}
-	out := label.plain
-	if label.styled != "" {
-		out = label.styled
+	var parts []string
+	if live > 0 {
+		parts = append(parts, fmt.Sprintf("%d running", live))
 	}
-	return out + dashes(width-len(runes))
+	if stale := counts[loop.StatusRunning] - live; stale > 0 {
+		parts = append(parts, fmt.Sprintf("%d stale", stale))
+	}
+	if n := counts[loop.StatusPaused]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d paused", n))
+	}
+	if n := counts[loop.StatusGreen]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d green to review", n))
+	}
+	if n := counts[loop.StatusParked]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d parked", n))
+	}
+	if n := counts[loop.StatusAccepted] + counts[loop.StatusRejected]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d decided", n))
+	}
+	if len(s.broken) > 0 {
+		parts = append(parts, fmt.Sprintf("%d unreadable", len(s.broken)))
+	}
+	summary := "no loops yet"
+	if len(parts) > 0 {
+		summary = strings.Join(parts, " · ")
+	}
+	left := joinCells(styled(s.color, sgrBold, " loopy"), plainCell("   "+summary))
+	if s.once {
+		return left
+	}
+	hints := "? help · q quit"
+	gap := s.width - loop.DisplayWidth(left.plain) - loop.DisplayWidth(hints) - 1
+	if gap < 2 {
+		return left
+	}
+	return joinCells(left, plainCell(strings.Repeat(" ", gap)), styled(s.color, sgrDim, hints), plainCell(" "))
 }
 
-// padCell pads (or truncates) a cell to exactly width visible columns.
-func padCell(c cell, width int) string {
-	runes := []rune(c.plain)
-	if len(runes) > width {
-		return string(runes[:width-1]) + "…"
+// railWidth sizes the loop rail to its content within sane bounds.
+func railWidth(loops []loop.LoopView, broken []loop.BrokenLoop) int {
+	w := minRailWidth
+	for _, v := range loops {
+		// marker(2) + glyph(2) + id + gap(2) + iters(5)
+		if need := 2 + 2 + loop.DisplayWidth(v.ID) + 2 + 5; need > w {
+			w = need
+		}
 	}
-	out := c.plain
-	if c.styled != "" {
-		out = c.styled
+	for _, b := range broken {
+		// marker(2) + glyph(2) + id + " (unreadable)"(13)
+		if need := 2 + 2 + loop.DisplayWidth(b.ID) + 13; need > w {
+			w = need
+		}
 	}
-	return out + strings.Repeat(" ", width-len(runes))
-}
-
-func truncRunes(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
+	if w > maxRailWidth {
+		return maxRailWidth
 	}
-	if n <= 1 {
-		return "…"
-	}
-	return string(runes[:n-1]) + "…"
+	return w
 }
 
 // statusGlyph pairs every status with a non-color signal.
@@ -173,43 +252,38 @@ func statusGlyph(v loop.LoopView) (glyph, sgr string) {
 		return "!", sgrYellow // says running, but no engine holds the lock
 	case loop.StatusPaused:
 		return "◌", sgrYellow
-	case loop.StatusGreen, loop.StatusAccepted:
+	case loop.StatusGreen:
 		return "✓", sgrGreen
-	default: // parked, rejected
+	case loop.StatusAccepted:
+		return "✓", sgrGreen
+	case loop.StatusRejected:
+		return "✗", sgrRed
+	default: // parked
 		return "✗", sgrRed
 	}
 }
 
-func statusText(v loop.LoopView) string {
-	if v.Status == loop.StatusRunning && !v.Live {
+func statusPhrase(v loop.LoopView) string {
+	switch v.Status {
+	case loop.StatusRunning:
+		if v.Live {
+			return "running"
+		}
 		return "running (no engine)"
+	default:
+		return v.Status
 	}
-	return v.Status
 }
 
-func titleCell(s frameState, sel *loop.LoopView) cell {
-	if sel == nil {
-		return plainCell(" loopy — no loops yet ")
-	}
-	_, sgr := statusGlyph(*sel)
-	status := statusText(*sel)
-	rest := fmt.Sprintf(" · iter %d/%d · %s/%s ", sel.IterationsUsed, sel.MaxIterations, sel.WallClockUsed, sel.MaxWallClock)
-	plain := " " + sel.ID + " · " + status + rest
-	styledTitle := " " + sel.ID + " · " + paint(s.color, sgr, status) + rest
-	return cell{plain: plain, styled: styledTitle}
-}
-
-func leftLines(s frameState, rows int) []cell {
+func railLines(s frameState, railW, rows int) []cell {
 	lines := make([]cell, 0, rows)
-	if len(s.loops) == 0 {
-		lines = append(lines, styled(s.color, sgrDim, " (none)"))
-		return lines
-	}
-	// Keep the selection visible when the list outgrows the pane.
+	total := len(s.loops) + len(s.broken)
+	// Keep the selection visible when the list outgrows the rail.
 	start := 0
-	if len(s.loops) > rows && s.selected >= rows {
+	if total > rows && s.selected >= rows {
 		start = s.selected - rows + 1
 	}
+	idW := railW - 2 - 2 - 2 - 5
 	for i := start; i < len(s.loops) && len(lines) < rows; i++ {
 		v := s.loops[i]
 		marker := "  "
@@ -217,68 +291,115 @@ func leftLines(s frameState, rows int) []cell {
 			marker = "▶ "
 		}
 		glyph, sgr := statusGlyph(v)
-		name := truncRunes(v.ID, leftPaneWidth-6)
-		plain := " " + marker + name + strings.Repeat(" ", leftPaneWidth-6-len([]rune(name))) + " " + glyph
+		iters := fmt.Sprintf("%d/%d", v.IterationsUsed, v.MaxIterations)
+		if loop.DisplayWidth(iters) > 5 {
+			iters = fmt.Sprintf("%d", v.IterationsUsed)
+		}
+		plain := marker + glyph + " " + loop.PadDisplay(v.ID, idW) + "  " + fmt.Sprintf("%5s", iters)
 		text := paint(s.color, sgr, plain)
 		if i == s.selected {
 			text = paint(s.color, sgrBold, text)
 		}
 		lines = append(lines, cell{plain: plain, styled: text})
 	}
+	for _, b := range s.broken {
+		if len(lines) >= rows {
+			break
+		}
+		plain := "  ✗ " + loop.TruncateDisplay(b.ID, idW) + " (unreadable)"
+		lines = append(lines, styled(s.color, sgrRed, loop.TruncateDisplay(plain, railW)))
+	}
 	return lines
 }
 
-func rightLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
+func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 	if s.loadErr != "" {
-		return []cell{{}, styled(s.color, sgrRed, " error: "+truncRunes(s.loadErr, width-8))}
+		return []cell{{}, styled(s.color, sgrRed, "error: "+loop.TruncateDisplay(s.loadErr, width-8))}
+	}
+	if s.form.active {
+		return formLines(s, width)
 	}
 	if sel == nil {
-		return []cell{
-			{},
-			plainCell(" no loops yet — start one:"),
-			{},
-			styled(s.color, sgrCyan, `   loopy "<goal>"`),
+		if len(s.broken) > 0 {
+			return brokenOnlyLines(s, width)
 		}
+		return emptyStateLines(s, width, rows)
 	}
 	if s.showHelp {
 		return helpLines(s)
 	}
 
 	lines := make([]cell, 0, rows)
-	lines = append(lines, tabBar(s))
-	lines = append(lines, styled(s.color, sgrDim, " goal: "+truncRunes(sel.Goal, width-7)))
+	glyph, sgr := statusGlyph(*sel)
+	lines = append(lines, joinCells(
+		styled(s.color, sgr, glyph+" "),
+		styled(s.color, sgrBold, sel.ID),
+		plainCell(" — "),
+		styled(s.color, sgr, statusPhrase(*sel)),
+	))
+	lines = append(lines, styled(s.color, sgrDim, "goal: "+loop.TruncateDisplay(sel.Goal, width-6)))
+	meta := fmt.Sprintf("agent %s · iter %d/%d · wall %s of %s", sel.Agent, sel.IterationsUsed, sel.MaxIterations, sel.WallClockUsed, sel.MaxWallClock)
+	lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(meta, width)))
+	lines = append(lines, activityLine(s, *sel, width))
 	lines = append(lines, cell{})
+	lines = append(lines, tabBar(s))
 
 	bodyRows := rows - len(lines)
 	var body []cell
-	switch s.tab {
-	case tabIterations:
-		body = iterationsBody(s, *sel, width)
-	default:
+	if s.tab == tabOverview {
+		body = overviewBody(s, *sel, width)
+	} else {
 		body = artifactBody(s, width)
 	}
 	lines = append(lines, window(body, bodyRows, s.scroll)...)
 	return lines
 }
 
-func tabBar(s frameState) cell {
-	var plain, styledBar strings.Builder
-	plain.WriteString(" ")
-	styledBar.WriteString(" ")
-	for i, name := range tabNames {
-		var p string
-		if tabID(i) == s.tab {
-			p = "[" + name + "]"
-			styledBar.WriteString(paint(s.color, sgrInvert, p))
-		} else {
-			p = " " + name + " "
-			styledBar.WriteString(p)
+// activityLine is the two-second answer to "what is it doing right now".
+func activityLine(s frameState, v loop.LoopView, width int) cell {
+	switch v.Status {
+	case loop.StatusRunning:
+		if !v.Live {
+			return styled(s.color, sgrYellow, loop.TruncateDisplay("no engine holds this loop — r resumes it, loopy abort stops it", width))
 		}
-		plain.WriteString(p)
-		plain.WriteString(" ")
-		styledBar.WriteString(" ")
+		var now string
+		switch v.Phase {
+		case loop.PhaseAgent:
+			now = fmt.Sprintf("now: agent running · iter %d", v.PhaseIteration)
+		case loop.PhaseVerify:
+			now = fmt.Sprintf("now: verifying · iter %d", v.PhaseIteration)
+		default:
+			now = "now: between iterations"
+		}
+		if s.phaseElapsed != "" && v.Phase != "" {
+			now += " · " + s.phaseElapsed
+		}
+		return styled(s.color, sgrCyan, loop.TruncateDisplay(now, width))
+	case loop.StatusPaused:
+		return styled(s.color, sgrYellow, loop.TruncateDisplay("paused — r starts an engine and resumes", width))
+	case loop.StatusGreen:
+		return styled(s.color, sgrGreen, loop.TruncateDisplay(fmt.Sprintf("✓ verifier green after %d iteration(s) — ready for review", v.IterationsUsed), width))
+	case loop.StatusParked:
+		return styled(s.color, sgrRed, loop.TruncateDisplay("✗ "+v.ParkedReason, width))
+	case loop.StatusAccepted:
+		return styled(s.color, sgrGreen, loop.TruncateDisplay("decided: accepted", width))
+	case loop.StatusRejected:
+		return styled(s.color, sgrRed, loop.TruncateDisplay("decided: rejected", width))
 	}
-	return cell{plain: plain.String(), styled: styledBar.String()}
+	return cell{}
+}
+
+func tabBar(s frameState) cell {
+	cells := make([]cell, 0, tabCount*2)
+	for i, name := range tabNames {
+		if tabID(i) == s.tab {
+			cells = append(cells, styled(s.color, sgrInvert, "["+name+"]"))
+		} else {
+			cells = append(cells, styled(s.color, sgrDim, " "+name+" "))
+		}
+		cells = append(cells, plainCell(" "))
+	}
+	return joinCells(cells...)
 }
 
 // window slices body lines to the visible rows. scroll < 0 follows the tail
@@ -298,14 +419,15 @@ func window(lines []cell, rows, scroll int) []cell {
 	return lines[start : start+rows]
 }
 
-func iterationsBody(s frameState, v loop.LoopView, width int) []cell {
+func overviewBody(s frameState, v loop.LoopView, width int) []cell {
 	var lines []cell
 	if len(v.Iterations) == 0 {
-		return []cell{plainCell(" waiting for the baseline verify…")}
+		lines = append(lines, plainCell(" waiting for the baseline verify…"))
+		return lines
 	}
-	lines = append(lines, styled(s.color, sgrDim, "  iter      verdict            agent      verify     diff"))
+	lines = append(lines, styled(s.color, sgrDim, " "+loop.IterationRowHeader))
 	for _, it := range v.Iterations {
-		row := "  " + loop.RenderIterationRow(it)
+		row := " " + loop.RenderIterationRow(it)
 		sgr := sgrGreen
 		if !it.Green {
 			sgr = sgrRed
@@ -313,25 +435,42 @@ func iterationsBody(s frameState, v loop.LoopView, width int) []cell {
 		if it.Baseline {
 			sgr = sgrDim
 		}
-		lines = append(lines, styled(s.color, sgr, row))
+		lines = append(lines, styled(s.color, sgr, loop.TruncateDisplay(row, width)))
 	}
-	if v.Status == loop.StatusRunning {
-		label := fmt.Sprintf("  %-9d ● running…", len(v.Iterations))
-		if !v.Live {
-			label = "  (no live engine — resume to continue)"
-		}
+	if v.Status == loop.StatusRunning && v.Live {
+		label := fmt.Sprintf(" %-5d ● %s…", len(v.Iterations), runningVerb(v))
 		lines = append(lines, styled(s.color, sgrCyan, label))
-	}
-	if v.ParkedReason != "" {
-		lines = append(lines, cell{}, styled(s.color, sgrYellow, " note: "+truncRunes(v.ParkedReason, width-8)))
 	}
 	if v.LastFeedback != "" && v.Status != loop.StatusGreen && v.Status != loop.StatusAccepted {
 		lines = append(lines, cell{}, styled(s.color, sgrDim, " last feedback tail:"))
 		for _, fl := range strings.Split(strings.TrimRight(v.LastFeedback, "\n"), "\n") {
-			lines = append(lines, plainCell("  | "+truncRunes(fl, width-5)))
+			lines = append(lines, plainCell(" | "+loop.TruncateDisplay(fl, width-4)))
+		}
+	}
+	// A short live tail keeps "what is it doing" on the default view; the
+	// live tab has the full one.
+	if v.Live && !s.art.missing && len(s.art.lines) > 0 {
+		lines = append(lines, cell{}, styled(s.color, sgrDim, " live tail · "+s.art.label+":"))
+		tail := s.art.lines
+		if len(tail) > 6 {
+			tail = tail[len(tail)-6:]
+		}
+		for _, tl := range tail {
+			lines = append(lines, plainCell(" | "+loop.TruncateDisplay(strings.ReplaceAll(tl, "\t", "    "), width-4)))
 		}
 	}
 	return lines
+}
+
+func runningVerb(v loop.LoopView) string {
+	switch v.Phase {
+	case loop.PhaseAgent:
+		return "agent running"
+	case loop.PhaseVerify:
+		return "verifying"
+	default:
+		return "running"
+	}
 }
 
 func artifactBody(s frameState, width int) []cell {
@@ -349,10 +488,94 @@ func artifactBody(s frameState, width int) []cell {
 		banner += fmt.Sprintf(" · truncated: showing last %s of %s", loop.HumanBytes(int(shown)), loop.HumanBytes(int(art.size)))
 		code = sgrYellow
 	}
-	lines := []cell{styled(s.color, code, truncRunes(banner, width))}
+	lines := []cell{styled(s.color, code, loop.TruncateDisplay(banner, width))}
 	for _, l := range art.lines {
-		lines = append(lines, plainCell(" "+truncRunes(strings.ReplaceAll(l, "\t", "    "), width-1)))
+		lines = append(lines, plainCell(" "+loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)))
 	}
+	return lines
+}
+
+// emptyStateLines is first-run onboarding: the one place the mascot lives in
+// the working monitor, plus a checklist whose next step is executable in
+// place — i initializes, digits register detected agents, n starts a loop.
+func emptyStateLines(s frameState, width, rows int) []cell {
+	rowsOut := []cell{}
+	if rows >= 16 && width >= 64 {
+		for i, art := range logoArt {
+			side := ""
+			switch i {
+			case 1:
+				side = "        l o o p y"
+			case 3:
+				side = "   " + logoTagline
+			}
+			rowsOut = append(rowsOut, joinCells(styled(s.color, sgrCyan, "   "+art), plainCell(side)))
+		}
+	}
+	rowsOut = append(rowsOut,
+		cell{},
+		plainCell(" no loops yet — the path to the first one:"),
+		cell{},
+	)
+
+	// Step 1: init.
+	if s.initialized {
+		rowsOut = append(rowsOut, plainCell("   1. initialize the repo ✓  (.loopy/ exists)"))
+	} else {
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   1. "),
+			styled(s.color, sgrCyan, "press i"),
+			plainCell(" to initialize this repo (creates .loopy/, git-ignores it)"),
+		))
+	}
+
+	// Step 2: an agent.
+	switch {
+	case s.agentsRegistered:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent ✓  (see loopy agent list)"))
+	case !s.initialized:
+		rowsOut = append(rowsOut, styled(s.color, sgrDim, "   2. register an agent"))
+	case len(s.detected) > 0:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent — found on this machine:"))
+		for i, d := range s.detected {
+			if i >= 3 {
+				break
+			}
+			rowsOut = append(rowsOut, joinCells(
+				plainCell("        "),
+				styled(s.color, sgrCyan, fmt.Sprintf("press %d", i+1)),
+				plainCell(loop.TruncateDisplay(fmt.Sprintf(" for %s  (%s)", d.Name, d.Cmd), width-15)),
+			))
+		}
+	default:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent:"),
+			styled(s.color, sgrDim, loop.TruncateDisplay(`        loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" --default`, width)))
+	}
+
+	// Step 3: the loop.
+	if s.initialized && s.agentsRegistered {
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   3. "),
+			styled(s.color, sgrCyan, "press n"),
+			plainCell(" and describe the goal — the agent iterates until your verifier passes"),
+		))
+	} else {
+		rowsOut = append(rowsOut, styled(s.color, sgrDim, "   3. start a loop (n)"))
+	}
+
+	rowsOut = append(rowsOut,
+		cell{},
+		styled(s.color, sgrDim, " then watch it converge here. (? help · q quits)"),
+	)
+	return rowsOut
+}
+
+func brokenOnlyLines(s frameState, width int) []cell {
+	lines := []cell{{}, styled(s.color, sgrRed, " every loop here is unreadable:")}
+	for _, b := range s.broken {
+		lines = append(lines, plainCell("   "+loop.TruncateDisplay(b.ID+": "+b.Err, width-3)))
+	}
+	lines = append(lines, cell{}, plainCell(" run: loopy doctor"))
 	return lines
 }
 
@@ -361,18 +584,20 @@ func helpLines(s frameState) []cell {
 		"",
 		" keys",
 		"   ↑/↓ or j/k     select loop (list) · scroll (detail)",
-		"   enter          drill into the detail pane",
+		"   enter          focus the detail pane for scrolling",
 		"   esc            back to the loop list · dismiss",
-		"   tab / 1-4      switch view: live, iterations, diff, verifier",
+		"   tab / 1-4      switch view: overview, live, diff, verifier",
+		"   n              start a new loop (goal + the project verifier)",
 		"   g / G          jump to top / follow the tail",
 		"   p              pause at the next iteration boundary",
 		"   r              resume a paused loop (spawns the engine)",
 		"   a              abort (asks for confirmation)",
-		"   o              quit and print the review command",
+		"   o              quit and print the next command",
 		"   q              quit",
 		"",
 		" the monitor never writes loop state; controls go through",
 		" control.json and the engine honors them at phase boundaries.",
+		" accept and reject stay in the CLI: loopy review <id>.",
 	}
 	lines := make([]cell, 0, len(rows))
 	for _, r := range rows {
@@ -381,27 +606,59 @@ func helpLines(s frameState) []cell {
 	return lines
 }
 
-func footerCell(s frameState, sel *loop.LoopView, width int) string {
+// footerKeys are dropped right-to-left when the next command needs the room;
+// they are never cut mid-word.
+var listKeys = []string{"↑↓ loop", "n new", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
+var detailKeys = []string{"↑↓ scroll", "g top", "G follow", "esc back", "tab view", "? help", "q quit"}
+var formKeys = []string{"type the goal", "enter start", "esc cancel"}
+
+func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	switch {
+	case s.form.active && s.flash == "":
+		return styled(s.color, sgrDim, loop.TruncateDisplay(" "+strings.Join(formKeys, " · "), width))
 	case s.confirmAbort && sel != nil:
-		return padCell(styled(s.color, sgrRed, fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID)), width)
+		return styled(s.color, sgrRed, loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width))
 	case s.flash != "":
-		return padCell(styled(s.color, sgrYellow, " "+s.flash), width)
+		return styled(s.color, sgrYellow, loop.TruncateDisplay(" "+s.flash, width))
 	}
-	keys := " ↑↓ loop · enter drill · tab view · p pause · r resume · a abort · ? help · q quit"
-	if s.focusDetail {
-		keys = " ↑↓ scroll · g top · G follow · esc back · tab view · ? help · q quit"
-	}
+
 	next := ""
-	if sel != nil && sel.NextCommand != "" {
-		next = "next: " + sel.NextCommand + " "
+	if sel != nil && sel.NextCommand != "" && !(sel.Status == loop.StatusRunning && !s.once) {
+		// Inside the live monitor a running loop's "next" is the monitor
+		// itself — pointless; --once keeps it for scripts.
+		next = "next: " + sel.NextCommand
 	}
-	// The exact next command always wins the space fight.
-	keyW := width - len([]rune(next))
-	if keyW < 0 {
-		return padCell(plainCell(" "+truncRunes(strings.TrimSpace(next), width-1)), width)
+	if s.once {
+		return styled(s.color, sgrCyan, " "+next)
 	}
-	plain := padCell(plainCell(keys), keyW) + next
-	stl := padCell(styled(s.color, sgrDim, truncRunes(keys, keyW)), keyW) + paint(s.color, sgrCyan, next)
-	return padCell(cell{plain: plain, styled: stl}, width)
+
+	keys := listKeys
+	if s.focusDetail {
+		keys = detailKeys
+	}
+	avail := width - loop.DisplayWidth(next) - 3
+	var kept []string
+	used := 0
+	for _, k := range keys {
+		need := loop.DisplayWidth(k)
+		if len(kept) > 0 {
+			need += 3 // " · "
+		}
+		if used+need > avail {
+			break
+		}
+		kept = append(kept, k)
+		used += need
+	}
+	keyText := " " + strings.Join(kept, " · ")
+	gap := width - loop.DisplayWidth(keyText) - loop.DisplayWidth(next) - 1
+	if gap < 0 {
+		return styled(s.color, sgrCyan, loop.TruncateDisplay(" "+next, width))
+	}
+	return joinCells(
+		styled(s.color, sgrDim, keyText),
+		plainCell(strings.Repeat(" ", gap)),
+		styled(s.color, sgrCyan, next),
+		plainCell(" "),
+	)
 }

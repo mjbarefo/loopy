@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,9 +30,16 @@ type model struct {
 	width, height int
 
 	loops      []loop.LoopView
+	broken     []loop.BrokenLoop
 	selected   int
 	selectedID string // selection is sticky by ID across reloads
 	loadErr    string
+
+	welcome          bool
+	initialized      bool
+	agentsRegistered bool
+	detected         []loop.AgentSuggestion
+	form             formState
 
 	focusDetail  bool
 	tab          tabID
@@ -60,24 +68,66 @@ func newModel(root, loopID string, color bool) model {
 	return m
 }
 
+// statusRank orders the rail by what needs eyes first: live work, then loops
+// waiting on the human (paused, dead engines, green to review), then the
+// parked and decided history.
+func statusRank(v loop.LoopView) int {
+	switch v.Status {
+	case loop.StatusRunning:
+		if v.Live {
+			return 0
+		}
+		return 2 // says running but nothing is — needs attention
+	case loop.StatusPaused:
+		return 1
+	case loop.StatusGreen:
+		return 3
+	case loop.StatusParked:
+		return 4
+	case loop.StatusAccepted:
+		return 5
+	default: // rejected
+		return 6
+	}
+}
+
 // reload re-reads every loop and the selected tab's artifact from disk. The
 // monitor holds no state of its own — disk is the truth, every time.
 func (m *model) reload() {
-	views, err := loadLoops(m.root)
+	views, broken, err := loadLoops(m.root)
 	if err != nil {
 		m.loadErr = errText(err)
 		return
 	}
 	m.loadErr = ""
 	m.loops = views
+	m.broken = broken
+	m.initialized = loop.EnsureInitialized(m.root) == nil
+	if reg, err := loop.LoadAgents(m.root); err == nil {
+		m.agentsRegistered = len(reg.Agents) > 0
+	}
+	if len(views) == 0 && m.initialized && !m.agentsRegistered {
+		m.detected = loop.DetectAgentCLIs(m.root)
+	} else {
+		m.detected = nil
+	}
+	sort.SliceStable(m.loops, func(i, j int) bool {
+		ri, rj := statusRank(m.loops[i]), statusRank(m.loops[j])
+		if ri != rj {
+			return ri < rj
+		}
+		// Newest first within a group; ListLoops is oldest-first.
+		return m.loops[i].CreatedAt > m.loops[j].CreatedAt
+	})
 	if len(m.loops) == 0 {
 		m.selected = 0
 		m.selectedID = ""
 		m.art = artifact{}
 		return
 	}
-	// Re-find the sticky selection; default to the newest loop.
-	m.selected = len(m.loops) - 1
+	// Re-find the sticky selection; default to the top of the rail — the
+	// loop that most needs eyes.
+	m.selected = 0
 	for i, v := range m.loops {
 		if v.ID == m.selectedID {
 			m.selected = i
@@ -85,9 +135,7 @@ func (m *model) reload() {
 		}
 	}
 	m.selectedID = m.loops[m.selected].ID
-	if m.tab != tabIterations {
-		m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
-	}
+	m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
 	if m.flash != "" && time.Now().After(m.flashUntil) {
 		m.flash = ""
 	}
@@ -139,6 +187,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	// The welcome splash: any key enters the monitor (q still quits).
+	if m.welcome {
+		m.welcome = false
+		if key == "q" || key == "ctrl+c" {
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.form.active {
+		return m.handleFormKey(msg)
+	}
 
 	if m.confirmAbort {
 		switch key {
@@ -201,7 +261,39 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.setTab((m.tab + tabCount - 1) % tabCount)
 		return m, nil
 	case "1", "2", "3", "4":
-		m.setTab(tabID(key[0] - '1'))
+		if m.current() != nil {
+			m.setTab(tabID(key[0] - '1'))
+			return m, nil
+		}
+		// Onboarding: digits register the detected agent CLIs.
+		idx := int(key[0] - '1')
+		if idx < len(m.detected) {
+			d := m.detected[idx]
+			if err := loop.AddAgent(m.root, d.Name, d.Cmd, !m.agentsRegistered); err != nil {
+				m.say("could not register %s: %v", d.Name, err)
+				return m, nil
+			}
+			m.say("registered agent %s", d.Name)
+			m.reload()
+		}
+		return m, nil
+	case "n":
+		if !m.initialized || !m.agentsRegistered {
+			m.say("set up first — initialize the repo and register an agent")
+			return m, nil
+		}
+		m.form = openForm(m.root)
+		return m, nil
+	case "i":
+		if m.initialized {
+			return m, nil
+		}
+		if _, _, err := loop.InitProject(m.root); err != nil {
+			m.say("init failed: %v", err)
+			return m, nil
+		}
+		m.say("initialized .loopy/ (and git-ignored it — commit that)")
+		m.reload()
 		return m, nil
 	case "p":
 		m.requestPause()
@@ -311,44 +403,114 @@ func (m *model) scrollBy(delta int) {
 	m.scroll = next
 }
 
-// bodyRows mirrors the frame's layout math: content rows minus the tab bar,
-// goal line, and spacer.
+// detailFixedRows mirrors the frame's layout: status, goal, meta, activity,
+// spacer, tab bar.
+const detailFixedRows = 6
+
+// bodyRows mirrors the frame's layout math: header + two rules + footer eat
+// four rows; the detail header eats detailFixedRows more.
 func (m model) bodyRows() int {
-	return m.height - 4 - 3
+	return m.height - 4 - detailFixedRows
 }
 
 func (m model) bodyLineCount() int {
-	if m.tab == tabIterations {
+	s := m.frameState()
+	if m.tab == tabOverview {
 		if v := m.current(); v != nil {
-			return len(iterationsBody(m.frameState(), *v, m.width))
+			return len(overviewBody(s, *v, m.detailWidth()))
 		}
 		return 0
 	}
-	return len(artifactBody(m.frameState(), m.width)) // banner + lines
+	return len(artifactBody(s, m.detailWidth())) // banner + lines
+}
+
+func (m model) detailWidth() int {
+	if m.width >= collapseWidth && (len(m.loops) > 0 || len(m.broken) > 0) {
+		return m.width - railWidth(m.loops, m.broken) - 2
+	}
+	return m.width - 1
 }
 
 func (m model) frameState() frameState {
-	return frameState{
-		width:        m.width,
-		height:       m.height,
-		color:        m.color,
-		loops:        m.loops,
-		selected:     m.selected,
-		focusDetail:  m.focusDetail,
-		tab:          m.tab,
-		scroll:       m.scroll,
-		art:          m.art,
-		confirmAbort: m.confirmAbort,
-		flash:        m.flash,
-		showHelp:     m.showHelp,
-		loadErr:      m.loadErr,
+	s := frameState{
+		width:            m.width,
+		height:           m.height,
+		color:            m.color,
+		loops:            m.loops,
+		broken:           m.broken,
+		selected:         m.selected,
+		initialized:      m.initialized,
+		agentsRegistered: m.agentsRegistered,
+		detected:         m.detected,
+		form:             m.form,
+		focusDetail:      m.focusDetail,
+		tab:              m.tab,
+		scroll:           m.scroll,
+		art:              m.art,
+		confirmAbort:     m.confirmAbort,
+		flash:            m.flash,
+		showHelp:         m.showHelp,
+		loadErr:          m.loadErr,
 	}
+	// The elapsed clock is the model's: the renderer stays deterministic.
+	if v := m.current(); v != nil && v.Live && v.PhaseStartedAt != "" {
+		if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
+			if d := time.Since(started); d > 0 {
+				s.phaseElapsed = d.Round(time.Second).String()
+			}
+		}
+	}
+	return s
 }
 
 func (m model) View() tea.View {
-	v := tea.NewView(renderFrame(m.frameState()))
+	frame := renderFrame(m.frameState())
+	if m.welcome {
+		frame = welcomeFrame(m.frameState(), m.root)
+	}
+	v := tea.NewView(frame)
 	v.AltScreen = true
 	return v
+}
+
+// handleFormKey edits the new-loop form. Typing uses the key's text (so
+// letters that are commands elsewhere, like q and p, spell the goal).
+func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.form = formState{}
+		return m, nil
+	case "enter":
+		id, err := startLoop(m.root, m.form)
+		if err != nil {
+			m.say("%v", err)
+			return m, nil
+		}
+		m.form = formState{}
+		m.selectedID = id
+		m.tab = tabOverview
+		m.say("loop %s started", id)
+		m.reload()
+		return m, nil
+	case "backspace":
+		r := []rune(m.form.goal)
+		if len(r) > 0 {
+			m.form.goal = string(r[:len(r)-1])
+		}
+		return m, nil
+	case "ctrl+u":
+		m.form.goal = ""
+		return m, nil
+	case "space":
+		m.form.goal += " "
+		return m, nil
+	}
+	if t := msg.Text; t != "" && len(m.form.goal) < 300 {
+		m.form.goal += t
+	}
+	return m, nil
 }
 
 func done(v loop.LoopView) bool {

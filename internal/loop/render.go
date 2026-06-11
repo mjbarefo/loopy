@@ -13,12 +13,8 @@ import (
 // RenderLoopLine is the one-line list form: id, status, iterations, agent,
 // goal.
 func RenderLoopLine(v LoopView) string {
-	verdict := v.Status
-	goal := v.Goal
-	if len(goal) > 60 {
-		goal = goal[:57] + "..."
-	}
-	return fmt.Sprintf("%-28s %-8s iter %d/%d  %-10s %s", v.ID, verdict, v.IterationsUsed, v.MaxIterations, v.Agent, goal)
+	return fmt.Sprintf("%-28s %-8s iter %d/%d  %-10s %s",
+		v.ID, v.Status, v.IterationsUsed, v.MaxIterations, v.Agent, TruncateDisplay(v.Goal, 60))
 }
 
 // RenderStatus is the full single-loop view: header, budget, iteration
@@ -38,7 +34,7 @@ func RenderStatus(v LoopView) string {
 	b.WriteString("\n")
 
 	if len(v.Iterations) > 0 {
-		b.WriteString("\n  iter      verdict            agent      verify     diff\n")
+		b.WriteString("\n  " + IterationRowHeader + "\n")
 		for _, it := range v.Iterations {
 			b.WriteString("  " + RenderIterationRow(it) + "\n")
 		}
@@ -55,6 +51,10 @@ func RenderStatus(v LoopView) string {
 	return b.String()
 }
 
+// IterationRowHeader pairs with RenderIterationRow; both renderers print it
+// above the timeline so the columns always carry their names.
+const IterationRowHeader = "iter  result              agent      verify     diff"
+
 func RenderIterationRow(it IterationView) string {
 	label := fmt.Sprintf("%d", it.Index)
 	if it.Baseline {
@@ -65,26 +65,60 @@ func RenderIterationRow(it IterationView) string {
 	case it.Violation:
 		verdict = "✗ forbidden"
 	case !it.Green && it.FailingStage != "":
-		verdict = fmt.Sprintf("✗ %s", it.FailingStage)
+		verdict = "✗ " + it.FailingStage
+		// Stage progression is the convergence signal: how far through the
+		// verifier this iteration got. Noise for single-stage verifiers.
+		if it.StagesTotal > 1 {
+			verdict += fmt.Sprintf(" (%d/%d)", it.StagesPassed, it.StagesTotal)
+		}
 	case !it.Green:
 		verdict = "✗ red"
 	}
-	agent := "-"
+	agent := "—"
 	if it.AgentExit != nil {
-		agent = fmt.Sprintf("exit %d", *it.AgentExit)
+		agent = humanDuration(time.Duration(it.AgentMS) * time.Millisecond)
+		if *it.AgentExit != 0 {
+			agent += fmt.Sprintf("·exit %d", *it.AgentExit)
+		}
 	}
-	return fmt.Sprintf("%-9s %-18s %-10s %-10s %s",
-		label, verdict, agent,
-		(time.Duration(it.VerifyMS) * time.Millisecond).Round(time.Millisecond).String(),
+	return fmt.Sprintf("%-5s %s %s %s %s",
+		label,
+		PadDisplay(verdict, 18),
+		PadDisplay(agent, 10),
+		PadDisplay(humanDuration(time.Duration(it.VerifyMS)*time.Millisecond), 10),
 		renderDiffCell(it))
 }
 
 func renderDiffCell(it IterationView) string {
 	if it.DiffBytes == 0 {
-		return "none"
+		return "—"
 	}
-	return fmt.Sprintf("%d file(s), %s", it.FilesChanged, HumanBytes(it.DiffBytes))
+	files := "file"
+	if it.FilesChanged != 1 {
+		files = "files"
+	}
+	return fmt.Sprintf("%d %s · %s", it.FilesChanged, files, HumanBytes(it.DiffBytes))
 }
+
+// humanDuration renders a duration at human resolution: milliseconds under a
+// second, otherwise seconds with empty trailing units trimmed ("30m0s" reads
+// "30m", "1h0m0s" reads "1h"; "30s" and "1m5s" stay as they are).
+func humanDuration(d time.Duration) string {
+	if d < time.Second {
+		return d.Round(time.Millisecond).String()
+	}
+	s := d.Round(time.Second).String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+// HumanDuration is humanDuration for other packages and the view-model.
+func HumanDuration(d time.Duration) string { return humanDuration(d) }
 
 // RenderIterationDetail is `loopy log <id> --iter N`: the iteration's record
 // plus pointers to its raw artifacts.
@@ -146,7 +180,7 @@ func RenderReview(v LoopView, review *Review, transcript string, transcriptIter 
 	}
 
 	if len(v.Iterations) > 0 {
-		b.WriteString("\n  iter      verdict            agent      verify     diff\n")
+		b.WriteString("\n  " + IterationRowHeader + "\n")
 		for _, it := range v.Iterations {
 			b.WriteString("  " + RenderIterationRow(it) + "\n")
 		}

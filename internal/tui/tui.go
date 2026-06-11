@@ -14,6 +14,9 @@ type Options struct {
 	Root   string
 	LoopID string // initial selection; empty selects the newest loop
 	Color  bool
+	// Welcome shows the launch splash first (bare `loopy`); any key enters
+	// the monitor.
+	Welcome bool
 }
 
 // Run starts the interactive monitor and blocks until it exits. The returned
@@ -22,6 +25,7 @@ type Options struct {
 // torn down.
 func Run(opts Options) (hint string, err error) {
 	m := newModel(opts.Root, opts.LoopID, opts.Color)
+	m.welcome = opts.Welcome
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
@@ -38,22 +42,27 @@ const onceWidth = 100
 
 // RenderOnce produces one deterministic, ANSI-free frame for scripts: the
 // same renderer as the live monitor, color off, content-sized height, and
-// the iterations view — convergence at a glance.
+// the overview — convergence at a glance. Key hints and the live elapsed
+// clock are omitted; they are interactive noise in a captured frame.
 func RenderOnce(root, loopID string) (string, error) {
 	m := newModel(root, loopID, false)
 	if m.loadErr != "" {
 		return "", fmt.Errorf("%s", m.loadErr)
 	}
 	s := m.frameState()
+	s.once = true
+	s.phaseElapsed = ""
 	s.width = onceWidth
 	if cols, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && cols >= minWidth {
 		s.width = cols
 	}
-	s.tab = tabIterations
-	// Content-sized: tab bar + goal + spacer + body, inside minimum bounds.
-	rows := 3
+	s.tab = tabOverview
+	// Content-sized: the fixed detail header plus the body, inside bounds.
+	rows := detailFixedRows
 	if v := m.current(); v != nil {
-		rows += len(iterationsBody(s, *v, s.width))
+		rows += len(overviewBody(s, *v, s.width))
+	} else {
+		rows += 16 // empty/onboarding state
 	}
 	s.height = clamp(rows+4, minHeight, 64)
 	s.scroll = 0

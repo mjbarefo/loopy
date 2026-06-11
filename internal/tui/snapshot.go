@@ -13,18 +13,20 @@ import (
 	"github.com/mjbarefo/loopy/internal/loop"
 )
 
-// tabID indexes the detail-pane views.
+// tabID indexes the detail-pane views. Overview is the default: the
+// convergence timeline plus current activity answers the monitor's questions
+// at a glance; the live tab is the full-screen tail for reading output.
 type tabID int
 
 const (
-	tabLive tabID = iota
-	tabIterations
+	tabOverview tabID = iota
+	tabLive
 	tabDiff
 	tabVerifier
 	tabCount
 )
 
-var tabNames = [tabCount]string{"live", "iterations", "diff", "verifier"}
+var tabNames = [tabCount]string{"overview", "live", "diff", "verifier"}
 
 // artifact is one viewer's content: a capped, tail-first load of a single
 // evidence file.
@@ -36,21 +38,23 @@ type artifact struct {
 	missing   bool
 }
 
-// loadLoops reads every loop's view-model, newest last (ListLoops order).
-func loadLoops(root string) ([]loop.LoopView, error) {
-	loops, err := loop.ListLoops(root)
+// loadLoops reads every loop's view-model, newest last (ListLoops order),
+// plus any loops whose state is unreadable — the monitor must keep working
+// when one loop.json is damaged.
+func loadLoops(root string) ([]loop.LoopView, []loop.BrokenLoop, error) {
+	loops, broken, err := loop.ListLoops(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	views := make([]loop.LoopView, 0, len(loops))
 	for _, l := range loops {
 		v, err := loop.BuildLoopView(root, l)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		views = append(views, v)
 	}
-	return views, nil
+	return views, broken, nil
 }
 
 // loadArtifact tail-loads one file under the viewer cap.
@@ -82,9 +86,21 @@ func currentIterationIndex(root string, v loop.LoopView) int {
 	return v.Iterations[last].Index
 }
 
-// liveArtifact picks the file to tail for the live view: whichever of the
-// current iteration's agent.log / verifier.log was written to most recently.
+// liveArtifact picks the file to tail for the live view. A live engine says
+// what it is doing via the loop's phase record; without one (or between
+// iterations) fall back to whichever of the current iteration's logs was
+// written most recently.
 func liveArtifact(root string, v loop.LoopView) artifact {
+	if v.Live && v.Phase != "" {
+		name := loop.AgentLogFile
+		if v.Phase == loop.PhaseVerify {
+			name = loop.VerifierLogFile
+		}
+		path := filepath.Join(loop.IterationDir(root, v.ID, v.PhaseIteration), name)
+		if _, err := os.Stat(path); err == nil {
+			return loadArtifact(fmt.Sprintf("iter %d · %s", v.PhaseIteration, name), path)
+		}
+	}
 	idx := currentIterationIndex(root, v)
 	dir := loop.IterationDir(root, v.ID, idx)
 	agentPath := filepath.Join(dir, loop.AgentLogFile)
@@ -117,11 +133,17 @@ func latestArtifact(root string, v loop.LoopView, name string) artifact {
 }
 
 // loadTabArtifact returns the artifact behind the given tab for one loop.
-// The iterations tab renders from the view-model, not a file.
+// The overview tab renders from the view-model plus the live tail.
 func loadTabArtifact(root string, v loop.LoopView, tab tabID) artifact {
 	switch tab {
 	case tabLive:
 		return liveArtifact(root, v)
+	case tabOverview:
+		// The overview embeds a short live tail for running loops.
+		if v.Live {
+			return liveArtifact(root, v)
+		}
+		return artifact{missing: true}
 	case tabDiff:
 		return latestArtifact(root, v, loop.DiffFile)
 	case tabVerifier:

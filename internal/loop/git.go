@@ -35,14 +35,28 @@ func DetectGitRoot(path string) (string, error) {
 	return filepath.Clean(top), nil
 }
 
-// IsGitDirty reports uncommitted changes (including untracked files).
-// .loopy/ is expected to be gitignored — `loopy init` guarantees it.
-func IsGitDirty(root string) (bool, error) {
-	output, err := gitOutput(root, "status", "--porcelain", "--untracked-files=all")
+// DirtyPaths lists tracked files with uncommitted changes. Untracked files
+// don't count: loop worktrees branch from HEAD and never see them, so they
+// can't make a loop's diff unreproducible.
+func DirtyPaths(root string) ([]string, error) {
+	output, err := runGitChecked(root, nil, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return strings.TrimSpace(output) != "", nil
+	var paths []string
+	// Porcelain v1: two status columns, a space, then the path.
+	for _, line := range strings.Split(string(output), "\n") {
+		if len(line) > 3 {
+			paths = append(paths, line[3:])
+		}
+	}
+	return paths, nil
+}
+
+// IsGitDirty reports uncommitted changes to tracked files.
+func IsGitDirty(root string) (bool, error) {
+	paths, err := DirtyPaths(root)
+	return len(paths) > 0, err
 }
 
 // EnsureWorktreePreconditions verifies git + worktree support and refuses a
@@ -52,12 +66,20 @@ func EnsureWorktreePreconditions(root string) error {
 	if _, err := gitOutput(root, "worktree", "list", "--porcelain"); err != nil {
 		return fmt.Errorf("git worktree is unavailable for %s: %w", root, err)
 	}
-	dirty, err := IsGitDirty(root)
+	dirty, err := DirtyPaths(root)
 	if err != nil {
 		return err
 	}
-	if dirty {
-		return errors.New("git working tree has uncommitted changes: commit or stash before starting a loop")
+	if len(dirty) > 0 {
+		shown := dirty
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		suffix := ""
+		if len(dirty) > len(shown) {
+			suffix = fmt.Sprintf(" … and %d more", len(dirty)-len(shown))
+		}
+		return fmt.Errorf("uncommitted changes to tracked files (%s%s): commit or stash before starting a loop", strings.Join(shown, ", "), suffix)
 	}
 	return nil
 }

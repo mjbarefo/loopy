@@ -13,6 +13,9 @@ isolated git worktree until the verifier goes green or the budget runs out.
 You review the result with the full iteration history in front of you.**
 
 ```bash
+brew install mjbarefo/tap/loopy
+
+loopy        # the monitor: set up the repo, start loops, watch them converge
 loopy "make the CSV importer handle quoted newlines"
 ```
 
@@ -113,12 +116,15 @@ loopy pause | resume | abort <loop-id>
 ```
 
 The monitor is the product's face: start a loop in one terminal, open
-`loopy watch` in another, and *see* it converge — live agent/verifier
-tailing, the iteration timeline, and drill-down viewers for the diff and
-verifier log (tail-first, 256 KiB cap, truncation banners). It takes only
-the safe, reversible actions — pause, resume, abort (with confirmation) —
-and always shows the exact next command in the footer. Accept and reject
-stay in the CLI.
+`loopy watch` in another, and *see* it converge. The rail lists every loop,
+most urgent first; the overview answers the live questions at a glance —
+the iteration timeline with verifier stage progression, what the engine is
+doing right now (agent or verify, and for how long), the last feedback the
+agent saw, and why a stopped loop stopped. Tabs switch to the full live
+tail, the cumulative diff, and the verifier log (tail-first, 256 KiB cap,
+truncation always labeled). It takes only the safe, reversible actions —
+pause, resume, abort (with confirmation) — and always shows the exact next
+command in the footer. Accept and reject stay in the CLI.
 
 Judge:
 
@@ -168,10 +174,14 @@ What works today:
   through accept and the logbook.
 
 What doesn't exist yet (in design order — see `DESIGN.md`):
-- A first tagged release — the pipeline is ready; cutting `v0.1.0-rc.1` is
-  the human's call. Until then, build from source.
-- The headless agent matrix (exact flags per agent CLI) is documented as
-  suggestions, not yet systematically tested.
+- Post-v0 features: reviewer agents, scheduled loops, cost budgets,
+  notification hooks.
+- Gemini CLI in the [tested agent matrix](docs/agents.md) — its invocation
+  is still a suggestion; Claude Code and Codex are exercised through real
+  loops.
+- Windows is build-verified only: archives are produced and CI
+  cross-compiles them, but the engine shells out to `sh` (Git Bash works)
+  and nobody runs the test suite there yet.
 
 ## Lineage
 
