@@ -165,7 +165,7 @@ func driveRace(root string, opts loop.CreateOptions, agents []string) error {
 // driveEngine runs the engine in the foreground with progress lines, shared
 // by run and resume. The exit-code contract: green nil, anything else error.
 func driveEngine(root, loopID string) error {
-	final, err := loop.RunEngine(root, loopID, progressEvents())
+	final, err := loop.RunEngine(root, loopID, progressEvents(root))
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func driveEngine(root, loopID string) error {
 
 // progressEvents renders engine progress as plain lines: one per phase,
 // CI-friendly, color only as a secondary signal.
-func progressEvents() loop.Events {
+func progressEvents(root string) loop.Events {
 	return loop.Events{
 		LoopStarted: func(l loop.Loop) {
 			fmt.Printf("loop %s started · agent %s · budget %d iters / %s\n",
@@ -231,7 +231,7 @@ func progressEvents() loop.Events {
 					note = " (" + l.ParkedReason + ")"
 				}
 				fmt.Printf("%s loop %s is green%s — parked for review\n", colorize(green, "✓"), l.ID, note)
-				if view, err := loop.BuildLoopView(root(), l); err == nil && view.NextCommand != "" {
+				if view, err := loop.BuildLoopView(root, l); err == nil && view.NextCommand != "" {
 					fmt.Printf("next: %s\n", view.NextCommand)
 				}
 			case loop.StatusParked:
@@ -240,20 +240,6 @@ func progressEvents() loop.Events {
 			}
 		},
 	}
-}
-
-// root is a lazy lookup for event rendering; events fire from engine context
-// where the project root is already established.
-func root() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	r, err := loop.DetectGitRoot(cwd)
-	if err != nil {
-		return cwd
-	}
-	return r
 }
 
 // resolveVerifier applies the precedence: --verify flags > stored project

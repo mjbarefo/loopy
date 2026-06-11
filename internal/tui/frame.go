@@ -307,10 +307,7 @@ func iterationsBody(s frameState, v loop.LoopView, width int) []cell {
 	for _, it := range v.Iterations {
 		row := "  " + loop.RenderIterationRow(it)
 		sgr := sgrGreen
-		switch {
-		case it.Violation, !it.Green && it.FailingStage != "":
-			sgr = sgrRed
-		case !it.Green:
+		if !it.Green {
 			sgr = sgrRed
 		}
 		if it.Baseline {
@@ -319,7 +316,7 @@ func iterationsBody(s frameState, v loop.LoopView, width int) []cell {
 		lines = append(lines, styled(s.color, sgr, row))
 	}
 	if v.Status == loop.StatusRunning {
-		label := fmt.Sprintf("  %-9s ● running…", fmt.Sprintf("%d", len(v.Iterations)))
+		label := fmt.Sprintf("  %-9d ● running…", len(v.Iterations))
 		if !v.Live {
 			label = "  (no live engine — resume to continue)"
 		}
