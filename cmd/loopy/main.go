@@ -93,6 +93,8 @@ func run(args []string) error {
 		return handleStatus(cwd, args[1:])
 	case "log":
 		return handleLog(cwd, args[1:])
+	case "watch":
+		return handleWatch(cwd, args[1:])
 	case "pause":
 		return handlePause(cwd, args[1:])
 	case "resume":
@@ -128,6 +130,8 @@ start a loop:
                                         (see loopy run --help)
 
 watch and steer:
+  loopy watch [loop-id] [--once]        the monitor: live view, timeline,
+                                        drill-downs (default: newest loop)
   loopy list [--json]                   all loops, one line each
   loopy status [loop-id] [--json]       one loop in depth (default: newest)
   loopy log <loop-id> [--iter N]        the recorded iteration history
