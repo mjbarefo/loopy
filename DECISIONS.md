@@ -167,6 +167,38 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   repo's own `.gitignore` entry was root-anchored (`/.loopy/`) so the
   example state can be committed — `loopy init` accepts the anchored form.
 
+- **2026-06-11 — Dirty-repo refusal ignores untracked files.** Loop worktrees
+  branch from HEAD and never see untracked files, so they can't make a diff
+  unreproducible; refusing on them blocked loops for any repo with a stray
+  scratch file. Only modified tracked files refuse, and the error names them.
+
+- **2026-06-11 — One corrupt loop.json degrades, never bricks.** `ListLoops`
+  skips unreadable loop state and reports it (`list` warns on stderr, the
+  monitor shows the broken entry, doctor gives the exact repair command)
+  instead of failing every command for every loop. Same for corrupt
+  iteration.json in views; the engine stays strict — it must not resume on
+  silently missing history.
+
+- **2026-06-11 — The engine publishes phase.json while a phase runs.** The
+  monitor used to guess "what is it doing" from log mtimes; now the engine
+  (still the single writer) records {iteration, phase: agent|verify,
+  started_at} at phase starts and clears it at boundaries. Ephemeral; only
+  meaningful while the engine lock is held.
+
+- **2026-06-11 — `list --json` emits {loops, broken}, not a bare array.**
+  Damaged state must be visible to scripts too, and a wrapper object can
+  grow fields without breaking consumers. Decided before the first release,
+  while the JSON contract is still free.
+
+- **2026-06-11 — Layout truncation is display-width aware.** `loopy list`
+  byte-sliced goals (cutting UTF-8 mid-rune) and the monitor counted runes
+  (CJK/emoji broke frame alignment). DisplayWidth/TruncateDisplay/PadDisplay
+  in internal/loop are the only truncation primitives now. Implemented by a
+  loopy loop (claude agent); the loop parked red because the hand-written
+  test fixture had an off-by-one the agent was forbidden to fix — it
+  diagnosed the bad vector in a comment instead. Accepted with the audited
+  override; the fixture fix is recorded in the loop's review.json.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be
