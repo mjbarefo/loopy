@@ -73,6 +73,28 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   parked. Checked at phase boundaries — a single slow verifier stage can
   overshoot, and that overshoot is recorded, not hidden.
 
+- **2026-06-10 — `loopy "<goal>"` sugar requires a multi-word argument.** A
+  single-word unknown command reads as a typo, not a goal; turning `loopy lst`
+  into a loop named "lst" would be hostile. Multi-word arguments (anything
+  with whitespace) start a loop; single words get the unknown-command error
+  with a pointer to `loopy run`.
+
+- **2026-06-10 — `loopy status` with no ID shows the newest loop.** That's the
+  loop you're most likely watching; `loopy list` is the overview.
+
+- **2026-06-10 — Pause exits 0 from `loopy run`/`resume`.** An intentional
+  pause is not a failure; only red parks (budget, stuck, abort) and runtime
+  errors exit 1.
+
+- **2026-06-10 — Iterations record precise `wall_ms` alongside RFC3339
+  timestamps.** Second-resolution timestamps are for humans; budget
+  accounting uses milliseconds so fast iterations don't vanish from
+  `wall_clock_used`.
+
+- **2026-06-10 — Verifier inference fails closed without a TTY.** A guessed
+  verifier is never used unconfirmed: interactive runs confirm once and store
+  it; non-interactive runs must pass `--verify` or have a stored default.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be
