@@ -36,21 +36,23 @@ type artifact struct {
 	missing   bool
 }
 
-// loadLoops reads every loop's view-model, newest last (ListLoops order).
-func loadLoops(root string) ([]loop.LoopView, error) {
-	loops, err := loop.ListLoops(root)
+// loadLoops reads every loop's view-model, newest last (ListLoops order),
+// plus any loops whose state is unreadable — the monitor must keep working
+// when one loop.json is damaged.
+func loadLoops(root string) ([]loop.LoopView, []loop.BrokenLoop, error) {
+	loops, broken, err := loop.ListLoops(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	views := make([]loop.LoopView, 0, len(loops))
 	for _, l := range loops {
 		v, err := loop.BuildLoopView(root, l)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		views = append(views, v)
 	}
-	return views, nil
+	return views, broken, nil
 }
 
 // loadArtifact tail-loads one file under the viewer cap.

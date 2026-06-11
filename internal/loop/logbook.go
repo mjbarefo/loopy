@@ -51,7 +51,7 @@ func appendLogbook(root string, l Loop, r Review) error {
 // LogbookEntries returns every recorded decision across loops, ordered by
 // decision time (oldest first), ties broken by loop ID.
 func LogbookEntries(root string) ([]Review, error) {
-	loops, err := ListLoops(root)
+	loops, _, err := ListLoops(root)
 	if err != nil {
 		return nil, err
 	}

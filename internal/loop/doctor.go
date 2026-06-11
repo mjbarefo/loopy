@@ -63,14 +63,22 @@ func Doctor(root string) []DoctorCheck {
 		add("agents", DoctorOK, fmt.Sprintf("%d agent(s), default %q", len(reg.Agents), reg.Default))
 	}
 
-	loops, err := ListLoops(root)
+	loops, broken, err := ListLoops(root)
 	if err != nil {
 		add("loops", DoctorFail, fmt.Sprintf("loop state unreadable: %v", err))
 		return checks
 	}
 	add("loops", DoctorOK, fmt.Sprintf("%d loop(s) recorded", len(loops)))
+	for _, b := range broken {
+		add("loops", DoctorFail, fmt.Sprintf("loop %s state unreadable (%s); restore the file from a backup or move the directory aside: mv %s %s.broken", b.ID, b.Err, LoopDir(root, b.ID), LoopDir(root, b.ID)))
+	}
 
 	for _, l := range loops {
+		if _, damaged, err := LoadIterationsLenient(root, l.ID); err == nil {
+			for _, d := range damaged {
+				add("iterations", DoctorFail, fmt.Sprintf("loop %s has an unreadable iteration record (%s); restore it from a backup or delete that iteration directory", l.ID, d))
+			}
+		}
 		lock, held, stale := EngineLockState(root, l.ID)
 		if stale {
 			add("locks", DoctorWarn, fmt.Sprintf("loop %s has a stale engine lock (pid %d is dead); `loopy resume %s` will take over", l.ID, lock.PID, l.ID))

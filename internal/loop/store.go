@@ -23,6 +23,7 @@ const (
 	loopFile    = "loop.json"
 	controlFile = "control.json"
 	iterFile    = "iteration.json"
+	phaseFile   = "phase.json"
 
 	// PromptFile, AgentLogFile, VerifierLogFile, DiffFile are the per-iteration
 	// evidence artifacts.
@@ -185,25 +186,40 @@ func LoadLoop(root, loopID string) (Loop, error) {
 	return l, nil
 }
 
-// ListLoops returns all loops sorted by creation time, newest last. Damaged
-// loop.json files are reported as errors with their path rather than hidden.
-func ListLoops(root string) ([]Loop, error) {
+// BrokenLoop reports a loop directory whose loop.json could not be read.
+// One damaged file must never take down list/status/watch for every other
+// loop — readers degrade and point at the evidence instead.
+type BrokenLoop struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Err  string `json:"error"`
+}
+
+// ListLoops returns all readable loops sorted by creation time, newest last,
+// plus a report of any loop directories whose state is unreadable.
+func ListLoops(root string) ([]Loop, []BrokenLoop, error) {
 	dir := filepath.Join(root, LoopyDir, LoopsDir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	var loops []Loop
+	var broken []BrokenLoop
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		l, err := LoadLoop(root, entry.Name())
 		if err != nil {
-			return nil, err
+			broken = append(broken, BrokenLoop{
+				ID:   entry.Name(),
+				Path: filepath.Join(dir, entry.Name(), loopFile),
+				Err:  err.Error(),
+			})
+			continue
 		}
 		loops = append(loops, l)
 	}
@@ -213,7 +229,7 @@ func ListLoops(root string) ([]Loop, error) {
 		}
 		return loops[i].ID < loops[j].ID
 	})
-	return loops, nil
+	return loops, broken, nil
 }
 
 // LoopIDs lists existing loop directory names (for ID disambiguation).
@@ -241,22 +257,41 @@ func SaveIteration(root, loopID string, it Iteration) error {
 }
 
 // LoadIterations returns all recorded iterations for a loop in index order.
+// A corrupt record is an error here: the engine resumes from this history and
+// must not silently skip evidence. Read-only callers use LoadIterationsLenient.
 func LoadIterations(root, loopID string) ([]Iteration, error) {
+	iterations, damaged, err := loadIterations(root, loopID)
+	if err != nil {
+		return nil, err
+	}
+	if len(damaged) > 0 {
+		return nil, fmt.Errorf("iteration state unreadable: %s", strings.Join(damaged, "; "))
+	}
+	return iterations, nil
+}
+
+// LoadIterationsLenient is the readers' variant: corrupt iteration records
+// are skipped and reported instead of failing the whole loop view.
+func LoadIterationsLenient(root, loopID string) (iterations []Iteration, damaged []string, err error) {
+	return loadIterations(root, loopID)
+}
+
+func loadIterations(root, loopID string) (iterations []Iteration, damaged []string, err error) {
 	dir := filepath.Join(LoopDir(root, loopID), IterDir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	var iterations []Iteration
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		var it Iteration
-		if err := ReadJSON(filepath.Join(dir, entry.Name(), iterFile), &it); err != nil {
+		path := filepath.Join(dir, entry.Name(), iterFile)
+		if err := ReadJSON(path, &it); err != nil {
 			// The engine creates the evidence directory first and writes
 			// iteration.json last: a missing record means the iteration is
 			// in flight (or died mid-write), not corrupt state. Readers —
@@ -265,12 +300,13 @@ func LoadIterations(root, loopID string) ([]Iteration, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return nil, err
+			damaged = append(damaged, err.Error())
+			continue
 		}
 		iterations = append(iterations, it)
 	}
 	sort.Slice(iterations, func(i, j int) bool { return iterations[i].Index < iterations[j].Index })
-	return iterations, nil
+	return iterations, damaged, nil
 }
 
 // readDirIfExists lists a directory, treating a missing one as empty.
@@ -295,6 +331,36 @@ func LoadConfig(root string) (Config, error) {
 // SaveConfig writes .loopy/config.json.
 func SaveConfig(root string, c Config) error {
 	return WriteJSON(filepath.Join(LoopyPath(root), configFile), c)
+}
+
+// WritePhase records what the engine is doing right now (agent or verify,
+// which iteration, since when). Engine-only, like all loop state; the monitor
+// reads it to answer "what is it doing" without guessing from log mtimes.
+func WritePhase(root, loopID string, p Phase) error {
+	return WriteJSON(filepath.Join(LoopDir(root, loopID), phaseFile), p)
+}
+
+// ReadPhase loads the engine's current phase; a missing file means the engine
+// is between iterations (or not running — gate on lock liveness).
+func ReadPhase(root, loopID string) (Phase, bool, error) {
+	var p Phase
+	err := ReadJSON(filepath.Join(LoopDir(root, loopID), phaseFile), &p)
+	if errors.Is(err, os.ErrNotExist) {
+		return Phase{}, false, nil
+	}
+	if err != nil {
+		return Phase{}, false, err
+	}
+	return p, true, nil
+}
+
+// ClearPhase removes the phase record (iteration boundary or engine exit).
+func ClearPhase(root, loopID string) error {
+	err := os.Remove(filepath.Join(LoopDir(root, loopID), phaseFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // ReadControl loads a loop's control document; missing file means no request.

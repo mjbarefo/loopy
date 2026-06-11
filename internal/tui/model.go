@@ -29,6 +29,7 @@ type model struct {
 	width, height int
 
 	loops      []loop.LoopView
+	broken     []loop.BrokenLoop
 	selected   int
 	selectedID string // selection is sticky by ID across reloads
 	loadErr    string
@@ -63,13 +64,14 @@ func newModel(root, loopID string, color bool) model {
 // reload re-reads every loop and the selected tab's artifact from disk. The
 // monitor holds no state of its own — disk is the truth, every time.
 func (m *model) reload() {
-	views, err := loadLoops(m.root)
+	views, broken, err := loadLoops(m.root)
 	if err != nil {
 		m.loadErr = errText(err)
 		return
 	}
 	m.loadErr = ""
 	m.loops = views
+	m.broken = broken
 	if len(m.loops) == 0 {
 		m.selected = 0
 		m.selectedID = ""
