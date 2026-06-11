@@ -69,9 +69,12 @@ func handleWatch(cwd string, args []string) error {
 
 const watchHelp = `usage: loopy watch [loop-id] [--once] [--no-color]
 
-  The monitor: loop list, live agent/verifier tailing, the iteration
-  timeline, and drill-down viewers (diff, verifier log). Defaults to the
-  newest loop.
+  The monitor. The rail lists every loop, most urgent first; the overview
+  answers the live questions at a glance — what is running, whether it is
+  converging (the iteration timeline), what the engine is doing right now,
+  why a loop stopped, and the next command. Tabs switch to the full live
+  tail, the cumulative diff, and the verifier log (tail-first, capped,
+  truncation always labeled). Defaults to the loop that most needs eyes.
 
   Control from the monitor is limited to the safe, reversible moves —
   pause, resume, abort (with confirmation), and handing you the next
@@ -79,8 +82,8 @@ const watchHelp = `usage: loopy watch [loop-id] [--once] [--no-color]
 
 flags:
   --once       print one deterministic ANSI-free frame and exit (for
-               scripts; honors COLUMNS for width)
+               scripts; honors COLUMNS for width, minimum 40)
   --no-color   disable color (NO_COLOR is also honored)
 
 keys: ↑↓ select · enter drill in · tab/1-4 views · p pause · r resume ·
-      a abort · o review hand-off · ? help · q quit`
+      a abort · o next-command hand-off · ? help · q quit`

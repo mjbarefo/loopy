@@ -19,6 +19,10 @@ type IterationView struct {
 	VerifyMS     int64  `json:"verify_ms,omitempty"`
 	DiffBytes    int    `json:"diff_bytes"`
 	FilesChanged int    `json:"files_changed"`
+	// StagesPassed/StagesTotal show how far through the verifier the
+	// iteration got — the convergence signal for multi-stage verifiers.
+	StagesPassed int `json:"stages_passed"`
+	StagesTotal  int `json:"stages_total"`
 }
 
 // LoopView is the shared view-model: everything the plain renderer (and the
@@ -75,8 +79,8 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 		ParkedReason:   l.ParkedReason,
 		IterationsUsed: l.IterationsUsed,
 		MaxIterations:  l.Budget.MaxIterations,
-		WallClockUsed:  time.Duration(l.WallClockUsed).Round(time.Second).String(),
-		MaxWallClock:   time.Duration(l.Budget.MaxWallClock).String(),
+		WallClockUsed:  HumanDuration(time.Duration(l.WallClockUsed)),
+		MaxWallClock:   HumanDuration(time.Duration(l.Budget.MaxWallClock)),
 		Verifier:       l.Verifier,
 		Worktree:       l.Worktree,
 		CreatedAt:      l.CreatedAt,
@@ -89,8 +93,12 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 	}
 	for _, it := range iterations {
 		var verifyMS int64
+		passed := 0
 		for _, s := range it.Stages {
 			verifyMS += s.DurationMS
+			if s.ExitCode == 0 {
+				passed++
+			}
 		}
 		view.Iterations = append(view.Iterations, IterationView{
 			Index:        it.Index,
@@ -103,6 +111,8 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 			VerifyMS:     verifyMS,
 			DiffBytes:    it.DiffBytes,
 			FilesChanged: len(it.ChangedFiles),
+			StagesPassed: passed,
+			StagesTotal:  len(l.Verifier),
 		})
 	}
 	if len(iterations) > 0 {

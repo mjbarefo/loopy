@@ -199,6 +199,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   diagnosed the bad vector in a comment instead. Accepted with the audited
   override; the fixture fix is recorded in the loop's review.json.
 
+- **2026-06-11 — Monitor redesign: overview-first, open layout.** The M2
+  monitor defaulted to a live tail that is blank for quiet agents and packed
+  its facts into a box border. The redesign makes the overview the default
+  tab (timeline + activity + feedback + a short live tail), adds an activity
+  line driven by phase.json ("now: agent running · iter 3 · 1m32s"), sorts
+  the rail by what needs eyes (live → paused → stale → green → parked →
+  decided, newest first within a group) and defaults selection to the top,
+  sizes the rail to its content, replaces box chrome with rules (more
+  content rows, fewer padding bugs), drops whole footer key hints instead of
+  cutting words, and suppresses the circular "next: loopy watch <id>" inside
+  the live monitor. `--once` keeps the next command and omits key hints.
+  The mascot lives only in the empty state, which is now a tailored
+  three-step onboarding checklist. Verifier stage progression ("✗ test
+  (2/3)") is the convergence signal in every timeline.
+
 ## For the human
 
 - **License.** The repo has no LICENSE file. crux's license should probably be

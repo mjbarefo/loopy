@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,6 +35,8 @@ type model struct {
 	selectedID string // selection is sticky by ID across reloads
 	loadErr    string
 
+	agentsRegistered bool
+
 	focusDetail  bool
 	tab          tabID
 	scroll       int // -1 = follow the tail
@@ -61,6 +64,29 @@ func newModel(root, loopID string, color bool) model {
 	return m
 }
 
+// statusRank orders the rail by what needs eyes first: live work, then loops
+// waiting on the human (paused, dead engines, green to review), then the
+// parked and decided history.
+func statusRank(v loop.LoopView) int {
+	switch v.Status {
+	case loop.StatusRunning:
+		if v.Live {
+			return 0
+		}
+		return 2 // says running but nothing is — needs attention
+	case loop.StatusPaused:
+		return 1
+	case loop.StatusGreen:
+		return 3
+	case loop.StatusParked:
+		return 4
+	case loop.StatusAccepted:
+		return 5
+	default: // rejected
+		return 6
+	}
+}
+
 // reload re-reads every loop and the selected tab's artifact from disk. The
 // monitor holds no state of its own — disk is the truth, every time.
 func (m *model) reload() {
@@ -72,14 +98,26 @@ func (m *model) reload() {
 	m.loadErr = ""
 	m.loops = views
 	m.broken = broken
+	if reg, err := loop.LoadAgents(m.root); err == nil {
+		m.agentsRegistered = len(reg.Agents) > 0
+	}
+	sort.SliceStable(m.loops, func(i, j int) bool {
+		ri, rj := statusRank(m.loops[i]), statusRank(m.loops[j])
+		if ri != rj {
+			return ri < rj
+		}
+		// Newest first within a group; ListLoops is oldest-first.
+		return m.loops[i].CreatedAt > m.loops[j].CreatedAt
+	})
 	if len(m.loops) == 0 {
 		m.selected = 0
 		m.selectedID = ""
 		m.art = artifact{}
 		return
 	}
-	// Re-find the sticky selection; default to the newest loop.
-	m.selected = len(m.loops) - 1
+	// Re-find the sticky selection; default to the top of the rail — the
+	// loop that most needs eyes.
+	m.selected = 0
 	for i, v := range m.loops {
 		if v.ID == m.selectedID {
 			m.selected = i
@@ -87,9 +125,7 @@ func (m *model) reload() {
 		}
 	}
 	m.selectedID = m.loops[m.selected].ID
-	if m.tab != tabIterations {
-		m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
-	}
+	m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
 	if m.flash != "" && time.Now().After(m.flashUntil) {
 		m.flash = ""
 	}
@@ -313,38 +349,61 @@ func (m *model) scrollBy(delta int) {
 	m.scroll = next
 }
 
-// bodyRows mirrors the frame's layout math: content rows minus the tab bar,
-// goal line, and spacer.
+// detailFixedRows mirrors the frame's layout: status, goal, meta, activity,
+// spacer, tab bar.
+const detailFixedRows = 6
+
+// bodyRows mirrors the frame's layout math: header + two rules + footer eat
+// four rows; the detail header eats detailFixedRows more.
 func (m model) bodyRows() int {
-	return m.height - 4 - 3
+	return m.height - 4 - detailFixedRows
 }
 
 func (m model) bodyLineCount() int {
-	if m.tab == tabIterations {
+	s := m.frameState()
+	if m.tab == tabOverview {
 		if v := m.current(); v != nil {
-			return len(iterationsBody(m.frameState(), *v, m.width))
+			return len(overviewBody(s, *v, m.detailWidth()))
 		}
 		return 0
 	}
-	return len(artifactBody(m.frameState(), m.width)) // banner + lines
+	return len(artifactBody(s, m.detailWidth())) // banner + lines
+}
+
+func (m model) detailWidth() int {
+	if m.width >= collapseWidth && (len(m.loops) > 0 || len(m.broken) > 0) {
+		return m.width - railWidth(m.loops, m.broken) - 2
+	}
+	return m.width - 1
 }
 
 func (m model) frameState() frameState {
-	return frameState{
-		width:        m.width,
-		height:       m.height,
-		color:        m.color,
-		loops:        m.loops,
-		selected:     m.selected,
-		focusDetail:  m.focusDetail,
-		tab:          m.tab,
-		scroll:       m.scroll,
-		art:          m.art,
-		confirmAbort: m.confirmAbort,
-		flash:        m.flash,
-		showHelp:     m.showHelp,
-		loadErr:      m.loadErr,
+	s := frameState{
+		width:            m.width,
+		height:           m.height,
+		color:            m.color,
+		loops:            m.loops,
+		broken:           m.broken,
+		selected:         m.selected,
+		agentsRegistered: m.agentsRegistered,
+		focusDetail:      m.focusDetail,
+		tab:              m.tab,
+		scroll:           m.scroll,
+		art:              m.art,
+		confirmAbort:     m.confirmAbort,
+		flash:            m.flash,
+		showHelp:         m.showHelp,
+		loadErr:          m.loadErr,
 	}
+	// The elapsed clock is the model's: the renderer stays deterministic.
+	if v := m.current(); v != nil && v.Live && v.PhaseStartedAt != "" {
+		if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
+			if d := time.Since(started); d > 0 {
+				s.phaseElapsed = d.Round(time.Second).String()
+			}
+		}
+	}
+	return s
 }
 
 func (m model) View() tea.View {
