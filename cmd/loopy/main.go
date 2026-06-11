@@ -63,6 +63,12 @@ func runWithExitCode(args []string) int {
 
 func run(args []string) error {
 	if len(args) == 0 {
+		// Bare `loopy` on a terminal is the product: launch the monitor
+		// (with onboarding when the repo isn't set up yet). Pipes and
+		// scripts get the help text, same as before.
+		if isTTY(os.Stdout) && isTTY(os.Stdin) {
+			return launchMonitor()
+		}
 		fmt.Println(rootHelp)
 		return nil
 	}
@@ -134,8 +140,10 @@ const rootHelp = `loopy — engineer loops, not prompts
   An agent iterates in an isolated git worktree until your verifier goes
   green or the budget runs out. You review the result; loopy never ships.
 
-start a loop:
-  loopy "<goal>"                        the happy path: defaults for everything
+start here:
+  loopy                                 launch the monitor — set the repo up,
+                                        start loops (n), and watch them converge
+  loopy "<goal>"                        start a loop with defaults for everything
   loopy run "<goal>" [flags]            engineer the loop deliberately
                                         (see loopy run --help)
 

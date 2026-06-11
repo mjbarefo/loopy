@@ -259,6 +259,22 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   subcommand `--help` are the contract. Revisit post-v0 if the surface
   stabilizes.
 
+- **2026-06-11 — Bare `loopy` launches the monitor; the whole first run
+  lives there.** On a terminal, `loopy` with no arguments opens the monitor
+  behind a welcome splash (logo, version, repo, counts — dismissed by any
+  key; pipes still get the help text). The empty state became executable
+  onboarding: `i` initializes the repo, digits register detected agent CLIs
+  (first one becomes the default), `n` opens the new-loop form. The form
+  resolves the verifier exactly like `loopy run` — project default, else
+  inference where *starting the loop is the confirmation* that stores it
+  (the CLI's confirm-once contract, same storage). Loop creation uses the
+  same domain call as the CLI and hands the loop to a detached engine via
+  the existing resume path, so the engine remains the single writer of loop
+  state and the monitor still only ever writes control.json plus the same
+  setup files the CLI writes (agents.json, config.json) on explicit user
+  action. Accept/reject stay in the audited CLI. `watch` and `--once` are
+  unchanged (no splash).
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

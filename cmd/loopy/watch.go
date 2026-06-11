@@ -9,6 +9,34 @@ import (
 	"github.com/mjbarefo/loopy/internal/tui"
 )
 
+// launchMonitor is bare `loopy`: the monitor with the welcome splash. It
+// works in an uninitialized repo — the empty state walks through setup.
+func launchMonitor() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, err := projectRoot(cwd)
+	if err != nil {
+		// Not a git repo: the monitor has nothing to watch. Help out.
+		fmt.Println(rootHelp)
+		fmt.Fprintf(os.Stderr, "\nloopy: %v — run loopy inside the repository you want loops in\n", err)
+		return nil
+	}
+	hint, err := tui.Run(tui.Options{
+		Root:    root,
+		Color:   colorEnabled,
+		Welcome: true,
+	})
+	if err != nil {
+		return err
+	}
+	if hint != "" {
+		fmt.Printf("next: %s\n", hint)
+	}
+	return nil
+}
+
 func handleWatch(cwd string, args []string) error {
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	fs.SetOutput(discard{})

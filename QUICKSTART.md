@@ -40,14 +40,17 @@ a guided README.)
 
 ```bash
 cd ~/code/your-project
-loopy init
+loopy
 ```
 
-`init` creates `.loopy/`, git-ignores it, and lists agent CLIs it found on
-your PATH with suggested registrations. Register at least one agent — loopy
-makes no model calls of its own:
+Bare `loopy` launches the monitor, and its empty state walks you through
+setup in place: press `i` to initialize the repo (creates `.loopy/`,
+git-ignores it), press a digit to register an agent CLI it found on your
+PATH, then press `n` to start your first loop. The same setup works from
+the CLI if you prefer it scripted:
 
 ```bash
+loopy init
 loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" --default
 ```
 
@@ -60,8 +63,11 @@ change: loops refuse to start while tracked files have uncommitted changes.
 
 ## 3. Start your first loop
 
-The happy path infers a verifier from your repo (`make check`,
-`go test ./...`, `npm test`, …) and confirms it with you once:
+In the monitor, press `n`, describe the goal, and hit enter — the form
+shows exactly which verifier, agent, and budget the loop will use before
+you commit. From the CLI, the same happy path infers a verifier from your
+repo (`make check`, `go test ./...`, `npm test`, …) and confirms it with
+you once:
 
 ```bash
 loopy "fix the flaky importer test"

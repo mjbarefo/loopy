@@ -55,8 +55,13 @@ type frameState struct {
 	broken   []loop.BrokenLoop
 	selected int
 
-	// agentsRegistered steers the empty-state checklist.
+	// initialized/agentsRegistered/detected steer onboarding: the empty
+	// state offers the exact next step, executable in place.
+	initialized      bool
 	agentsRegistered bool
+	detected         []loop.AgentSuggestion
+
+	form formState
 
 	focusDetail bool
 	tab         tabID
@@ -311,6 +316,9 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 	if s.loadErr != "" {
 		return []cell{{}, styled(s.color, sgrRed, "error: "+loop.TruncateDisplay(s.loadErr, width-8))}
 	}
+	if s.form.active {
+		return formLines(s, width)
+	}
 	if sel == nil {
 		if len(s.broken) > 0 {
 			return brokenOnlyLines(s, width)
@@ -488,36 +496,76 @@ func artifactBody(s frameState, width int) []cell {
 }
 
 // emptyStateLines is first-run onboarding: the one place the mascot lives in
-// the monitor, plus a checklist tailored to what is already set up.
+// the working monitor, plus a checklist whose next step is executable in
+// place — i initializes, digits register detected agents, n starts a loop.
 func emptyStateLines(s frameState, width, rows int) []cell {
-	agentStep := `2. register an agent:  loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" --default`
-	agentMark := ""
-	if s.agentsRegistered {
-		agentMark = " ✓"
-		agentStep = "2. register an agent" + agentMark + "  (done — see loopy agent list)"
-	}
 	rowsOut := []cell{}
-	if rows >= 14 && width >= 64 {
-		for _, art := range []string{
-			"",
-			"   ██░░██░░░░██░░██",
-			"   ██░░░░██████░░░░██        l o o p y",
-			"   ██░░░░██░░██░░░░██",
-			"   ██░░░░██████░░░░██   engineer loops, not prompts",
-			"   ██░░██░░░░██░░██",
-		} {
-			rowsOut = append(rowsOut, styled(s.color, sgrCyan, art))
+	if rows >= 16 && width >= 64 {
+		for i, art := range logoArt {
+			side := ""
+			switch i {
+			case 1:
+				side = "        l o o p y"
+			case 3:
+				side = "   " + logoTagline
+			}
+			rowsOut = append(rowsOut, joinCells(styled(s.color, sgrCyan, "   "+art), plainCell(side)))
 		}
 	}
 	rowsOut = append(rowsOut,
 		cell{},
 		plainCell(" no loops yet — the path to the first one:"),
 		cell{},
-		plainCell("   1. loopy init ✓  (done — .loopy/ exists)"),
-		plainCell("   "+loop.TruncateDisplay(agentStep, width-3)),
-		plainCell(`   3. loopy "fix the failing importer test"`),
+	)
+
+	// Step 1: init.
+	if s.initialized {
+		rowsOut = append(rowsOut, plainCell("   1. initialize the repo ✓  (.loopy/ exists)"))
+	} else {
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   1. "),
+			styled(s.color, sgrCyan, "press i"),
+			plainCell(" to initialize this repo (creates .loopy/, git-ignores it)"),
+		))
+	}
+
+	// Step 2: an agent.
+	switch {
+	case s.agentsRegistered:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent ✓  (see loopy agent list)"))
+	case !s.initialized:
+		rowsOut = append(rowsOut, styled(s.color, sgrDim, "   2. register an agent"))
+	case len(s.detected) > 0:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent — found on this machine:"))
+		for i, d := range s.detected {
+			if i >= 3 {
+				break
+			}
+			rowsOut = append(rowsOut, joinCells(
+				plainCell("        "),
+				styled(s.color, sgrCyan, fmt.Sprintf("press %d", i+1)),
+				plainCell(loop.TruncateDisplay(fmt.Sprintf(" for %s  (%s)", d.Name, d.Cmd), width-15)),
+			))
+		}
+	default:
+		rowsOut = append(rowsOut, plainCell("   2. register an agent:"),
+			styled(s.color, sgrDim, loop.TruncateDisplay(`        loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" --default`, width)))
+	}
+
+	// Step 3: the loop.
+	if s.initialized && s.agentsRegistered {
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   3. "),
+			styled(s.color, sgrCyan, "press n"),
+			plainCell(" and describe the goal — the agent iterates until your verifier passes"),
+		))
+	} else {
+		rowsOut = append(rowsOut, styled(s.color, sgrDim, "   3. start a loop (n)"))
+	}
+
+	rowsOut = append(rowsOut,
 		cell{},
-		styled(s.color, sgrDim, " then watch it converge here. (q quits)"),
+		styled(s.color, sgrDim, " then watch it converge here. (? help · q quits)"),
 	)
 	return rowsOut
 }
@@ -539,6 +587,7 @@ func helpLines(s frameState) []cell {
 		"   enter          focus the detail pane for scrolling",
 		"   esc            back to the loop list · dismiss",
 		"   tab / 1-4      switch view: overview, live, diff, verifier",
+		"   n              start a new loop (goal + the project verifier)",
 		"   g / G          jump to top / follow the tail",
 		"   p              pause at the next iteration boundary",
 		"   r              resume a paused loop (spawns the engine)",
@@ -559,11 +608,14 @@ func helpLines(s frameState) []cell {
 
 // footerKeys are dropped right-to-left when the next command needs the room;
 // they are never cut mid-word.
-var listKeys = []string{"↑↓ loop", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
+var listKeys = []string{"↑↓ loop", "n new", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
 var detailKeys = []string{"↑↓ scroll", "g top", "G follow", "esc back", "tab view", "? help", "q quit"}
+var formKeys = []string{"type the goal", "enter start", "esc cancel"}
 
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	switch {
+	case s.form.active && s.flash == "":
+		return styled(s.color, sgrDim, loop.TruncateDisplay(" "+strings.Join(formKeys, " · "), width))
 	case s.confirmAbort && sel != nil:
 		return styled(s.color, sgrRed, loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width))
 	case s.flash != "":

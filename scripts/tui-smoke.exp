@@ -108,6 +108,59 @@ send "q"
 expect eof
 unset env(NO_COLOR)
 
+# --- bare launch: splash → monitor → new-loop form ---------------------------
+note "bare launch 100x30"
+set stty_init "rows 30 columns 100"
+spawn $bin
+expect {
+    -ex "engineer loops, not prompts" {}
+    timeout { fail "bare: welcome splash never appeared" }
+}
+send " "
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "bare: monitor never appeared after dismissing the splash" }
+}
+send "n"
+expect {
+    -ex "start a loop" {}
+    timeout { fail "bare: n never opened the new-loop form" }
+}
+# Typing itself is unit-tested (incremental redraws defeat substring matching
+# here); prove the form closes cleanly and the monitor comes back.
+send "\x1b"
+expect {
+    -ex "↑↓ loop" {}
+    timeout { fail "bare: esc did not close the form" }
+}
+send "q"
+expect eof
+
+# --- bare launch in an uninitialized repo: onboarding ------------------------
+note "bare launch, uninitialized repo"
+set fresh [exec mktemp -d /tmp/loopy-tui-smoke-fresh.XXXXXX]
+exec sh -c "cd '$fresh' && git init -q -b main && git config user.email smoke@loopy.local && git config user.name smoke && echo hi > README.md && git add . && git commit -qm init"
+cd $fresh
+set stty_init "rows 30 columns 100"
+spawn $bin
+expect {
+    -ex "engineer loops, not prompts" {}
+    timeout { fail "fresh: welcome splash never appeared" }
+}
+send " "
+expect {
+    -ex "press i" {}
+    timeout { fail "fresh: onboarding never offered init" }
+}
+send "i"
+expect {
+    -ex "initialize the repo ✓" {}
+    timeout { fail "fresh: i did not initialize the repo" }
+}
+send "q"
+expect eof
+cd $repo
+
 # --- a live loop: watch shows it running -------------------------------------
 note "live loop"
 exec sh -c "cd '$repo' && '$bin' agent add slow --cmd 'sleep 8' > /dev/null"

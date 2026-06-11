@@ -166,24 +166,86 @@ func TestFrameAbortConfirmInFooter(t *testing.T) {
 }
 
 func TestFrameNoLoopsOnboarding(t *testing.T) {
+	// Uninitialized repo: the first step is executable in place.
 	s := frameState{width: 100, height: 24}
 	frame := renderFrame(s)
 	checkFrameGeometry(t, frame, 100, 24)
-	for _, want := range []string{"no loops yet", "loopy init ✓", "register an agent", "engineer loops, not prompts"} {
+	for _, want := range []string{"no loops yet", "press i", "engineer loops, not prompts"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("onboarding missing %q\n%s", want, frame)
 		}
 	}
-	s.agentsRegistered = true
-	if !strings.Contains(renderFrame(s), "register an agent ✓") {
-		t.Error("onboarding should tick the agent step when agents exist")
+
+	// Initialized with detected agent CLIs: digits register them.
+	s.initialized = true
+	s.detected = []loop.AgentSuggestion{{Binary: "claude", Name: "claude", Cmd: "claude -p {prompt}"}}
+	frame = renderFrame(s)
+	for _, want := range []string{"initialize the repo ✓", "press 1", "claude"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("onboarding missing %q\n%s", want, frame)
+		}
 	}
+
+	// Fully set up: n starts the first loop.
+	s.agentsRegistered = true
+	s.detected = nil
+	frame = renderFrame(s)
+	for _, want := range []string{"register an agent ✓", "press n"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("onboarding missing %q\n%s", want, frame)
+		}
+	}
+
 	// Short terminals drop the mascot, never the checklist.
 	s.height = 12
 	frame = renderFrame(s)
 	checkFrameGeometry(t, frame, 100, 12)
 	if strings.Contains(frame, "██") {
 		t.Error("mascot must yield to information on short terminals")
+	}
+}
+
+func TestWelcomeFrame(t *testing.T) {
+	s := frameState{width: 100, height: 24, initialized: true, agentsRegistered: true, loops: sampleLoops()}
+	frame := welcomeFrame(s, "/tmp/myproject")
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	if len(lines) > 24 {
+		t.Fatalf("welcome frame has %d lines, must fit 24", len(lines))
+	}
+	for i, line := range lines {
+		if w := loop.DisplayWidth(line); w > 100 {
+			t.Errorf("welcome line %d is %d columns, over 100", i, w)
+		}
+	}
+	for _, want := range []string{"l o o p y", "engineer loops, not prompts", "repo myproject", "2 loop(s)", "press any key"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("welcome missing %q\n%s", want, frame)
+		}
+	}
+	s.color = false
+	if strings.Contains(welcomeFrame(s, "/tmp/x"), "\x1b[") {
+		t.Error("color-off welcome contains ANSI escapes")
+	}
+}
+
+func TestFrameNewLoopForm(t *testing.T) {
+	s := wideState()
+	s.form = formState{
+		active: true, goal: "fix the importer",
+		stages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}}, stagesDesc: "go test ./...",
+		inferSource: "go.mod", agent: "claude",
+	}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{"start a loop", "fix the importer", "go test ./...", "inferred from go.mod", "enter start", "esc cancel"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("form missing %q\n%s", want, frame)
+		}
+	}
+	// A blocked form says why and how to proceed instead.
+	s.form = formState{active: true, blocked: `no verifier configured or inferable — start with: loopy run "<goal>" --verify "<cmd>"`}
+	if !strings.Contains(renderFrame(s), "no verifier configured") {
+		t.Error("blocked form must say why")
 	}
 }
 

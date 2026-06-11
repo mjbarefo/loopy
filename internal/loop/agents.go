@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -149,4 +150,45 @@ func AgentNames(reg AgentRegistry) []string {
 func NormalizeAgentName(name string) string {
 	fields := strings.Fields(strings.ToLower(strings.TrimSpace(name)))
 	return strings.Join(fields, "-")
+}
+
+// AgentSuggestion is a known agent CLI with its tested headless invocation
+// (docs/agents.md is the evidence trail).
+type AgentSuggestion struct {
+	Binary string
+	Name   string
+	Cmd    string
+}
+
+// KnownAgentCLIs is the suggestion table behind `loopy init` and the
+// monitor's onboarding: claude and codex are exercised through real loops;
+// gemini is still a suggestion.
+var KnownAgentCLIs = []AgentSuggestion{
+	{Binary: "claude", Name: "claude", Cmd: "claude -p {prompt} --permission-mode acceptEdits"},
+	// Plain `codex exec` runs read-only and can't edit the worktree;
+	// --full-auto is the workspace-write, no-prompts mode.
+	{Binary: "codex", Name: "codex", Cmd: "codex exec --full-auto {prompt}"},
+	{Binary: "gemini", Name: "gemini", Cmd: "gemini -p {prompt} --yolo"},
+}
+
+// DetectAgentCLIs returns the known agent CLIs present on PATH that are not
+// already registered.
+func DetectAgentCLIs(root string) []AgentSuggestion {
+	reg, err := LoadAgents(root)
+	registered := map[string]bool{}
+	if err == nil {
+		for name := range reg.Agents {
+			registered[name] = true
+		}
+	}
+	var found []AgentSuggestion
+	for _, s := range KnownAgentCLIs {
+		if registered[s.Name] {
+			continue
+		}
+		if _, err := exec.LookPath(s.Binary); err == nil {
+			found = append(found, s)
+		}
+	}
+	return found
 }

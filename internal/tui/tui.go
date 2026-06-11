@@ -14,6 +14,9 @@ type Options struct {
 	Root   string
 	LoopID string // initial selection; empty selects the newest loop
 	Color  bool
+	// Welcome shows the launch splash first (bare `loopy`); any key enters
+	// the monitor.
+	Welcome bool
 }
 
 // Run starts the interactive monitor and blocks until it exits. The returned
@@ -22,6 +25,7 @@ type Options struct {
 // torn down.
 func Run(opts Options) (hint string, err error) {
 	m := newModel(opts.Root, opts.LoopID, opts.Color)
+	m.welcome = opts.Welcome
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err

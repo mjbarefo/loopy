@@ -15,6 +15,7 @@ You review the result with the full iteration history in front of you.**
 ```bash
 brew install mjbarefo/tap/loopy
 
+loopy        # the monitor: set up the repo, start loops, watch them converge
 loopy "make the CSV importer handle quoted newlines"
 ```
 
