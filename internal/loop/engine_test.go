@@ -15,7 +15,7 @@ import (
 func newLoopProject(t *testing.T, agentCmd string) string {
 	t.Helper()
 	root := newTestRepo(t)
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	if err := AddAgent(root, "scripted", agentCmd, true); err != nil {

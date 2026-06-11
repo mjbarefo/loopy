@@ -10,10 +10,10 @@ import (
 
 func TestInitProjectIdempotentAndGitignore(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
@@ -31,7 +31,7 @@ func TestInitProjectPreservesExistingGitignore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
@@ -43,7 +43,7 @@ func TestInitProjectPreservesExistingGitignore(t *testing.T) {
 
 func TestLoopRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	l := Loop{
@@ -72,7 +72,7 @@ func TestLoopRoundTrip(t *testing.T) {
 
 func TestIterationsRoundTripAndOrder(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	for _, idx := range []int{2, 0, 1} {
@@ -96,7 +96,7 @@ func TestIterationsRoundTripAndOrder(t *testing.T) {
 
 func TestControlRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	// Missing control file reads as zero value.
@@ -121,7 +121,7 @@ func TestControlRoundTrip(t *testing.T) {
 
 func TestListLoopsSortedByCreation(t *testing.T) {
 	root := t.TempDir()
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	for i, id := range []string{"b-loop", "a-loop"} {

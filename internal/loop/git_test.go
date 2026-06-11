@@ -59,7 +59,7 @@ func TestDetectGitRoot(t *testing.T) {
 
 func TestWorktreeLifecycleAndSnapshot(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := InitProject(root); err != nil {
+	if _, _, err := InitProject(root); err != nil {
 		t.Fatal(err)
 	}
 	// .gitignore changed by init → dirty → refusal.

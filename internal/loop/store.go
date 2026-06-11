@@ -63,41 +63,44 @@ func EnsureInitialized(root string) error {
 
 // InitProject creates the .loopy skeleton and makes sure the directory is
 // git-ignored (live state and worktrees must never dirty the repo — the
-// dirty-repo refusal would deadlock loopy against itself).
-func InitProject(root string) (string, error) {
+// dirty-repo refusal would deadlock loopy against itself). The second return
+// reports whether .gitignore was modified.
+func InitProject(root string) (string, bool, error) {
 	base := LoopyPath(root)
 	for _, dir := range []string{base, filepath.Join(base, LoopsDir), filepath.Join(base, WorktreesDir)} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
 	if _, err := os.Stat(filepath.Join(base, agentsFile)); errors.Is(err, os.ErrNotExist) {
 		if err := WriteJSON(filepath.Join(base, agentsFile), AgentRegistry{Agents: map[string]Agent{}}); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
 	if _, err := os.Stat(filepath.Join(base, configFile)); errors.Is(err, os.ErrNotExist) {
 		if err := WriteJSON(filepath.Join(base, configFile), Config{}); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
-	if err := ensureGitignored(root); err != nil {
-		return "", err
+	ignored, err := ensureGitignored(root)
+	if err != nil {
+		return "", false, err
 	}
-	return base, nil
+	return base, ignored, nil
 }
 
-// ensureGitignored appends ".loopy/" to the project .gitignore when missing.
-func ensureGitignored(root string) error {
+// ensureGitignored appends ".loopy/" to the project .gitignore when missing,
+// reporting whether it wrote.
+func ensureGitignored(root string) (bool, error) {
 	path := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == ".loopy/" || trimmed == ".loopy" || trimmed == "/.loopy/" || trimmed == "/.loopy" {
-			return nil
+			return false, nil
 		}
 	}
 	content := string(data)
@@ -105,7 +108,10 @@ func ensureGitignored(root string) error {
 		content += "\n"
 	}
 	content += ".loopy/\n"
-	return os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // WriteJSON writes v as indented JSON atomically: temp file in the target
