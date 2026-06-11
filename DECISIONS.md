@@ -275,6 +275,29 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   action. Accept/reject stay in the audited CLI. `watch` and `--once` are
   unchanged (no splash).
 
+- **2026-06-11 — Monitor identity pass: the splash's vocabulary in the
+  working frames.** The splash set the identity (cyan logo, bold wordmark,
+  dim metadata, one accent doing real work); the monitor now speaks it
+  without losing a column of density. The calls: `∞` is the compact logo
+  mark in the header (`∞ loopy` — an East Asian Ambiguous glyph, the same
+  width class as the `●`/`▶` already in every frame); count numbers are
+  bold with dim `·` separators; rules and the rail separator are dim so
+  chrome recedes behind content. Color discipline is one status accent per
+  row: the rail colors only the glyph (cyan `▶` cursor, bold selected ID,
+  dim budget — whole-row painting is gone), the overview timeline colors
+  only the verdict cell (`RenderIterationRowParts` re-exposes the existing
+  row as label/verdict/metrics so the TUI accents without re-deriving),
+  and the baseline row stays fully dim. The detail header borrows the
+  form's typography — dim labels (`goal`, `agent`, `iter`, `wall`), plain
+  values — replacing two all-dim lines. Inverse video left the palette:
+  the active tab is cyan-bold and the brackets remain the NO_COLOR signal.
+  Quoted tails keep the CLI's ASCII `| ` gutter (now dim) rather than `│`,
+  so the box-drawing bar means exactly one thing: the rail separator.
+  Help keys and the broken-state `run: loopy doctor` line take cyan — keys
+  and next commands are actions, and actions own the accent. `--once`
+  stays ANSI-free and deterministic; its bytes changed only by the `∞`
+  mark and the label/value detail lines.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
