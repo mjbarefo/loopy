@@ -273,6 +273,15 @@ func LoadIterations(root, loopID string) ([]Iteration, error) {
 	return iterations, nil
 }
 
+// readDirIfExists lists a directory, treating a missing one as empty.
+func readDirIfExists(dir string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return entries, err
+}
+
 // LoadConfig reads .loopy/config.json; a missing file is an empty config.
 func LoadConfig(root string) (Config, error) {
 	var c Config

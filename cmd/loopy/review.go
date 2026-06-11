@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 )
@@ -183,6 +184,40 @@ func handleLogbook(cwd string, args []string) error {
 		fmt.Println(loop.RenderLogbookEntry(r))
 	}
 	fmt.Printf("\nfull narrative: %s\n", loop.LogbookPath(root))
+	return nil
+}
+
+func handleJudge(cwd string, args []string) error {
+	asJSON := false
+	var ids []string
+	for _, arg := range args {
+		if arg == "--json" {
+			asJSON = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			return usagef("usage: loopy judge <loop-id> <loop-id> [...] [--json]")
+		}
+		ids = append(ids, arg)
+	}
+	if len(ids) < 2 {
+		return usagef("usage: loopy judge <loop-id> <loop-id> [...] — the judge compares finished loops")
+	}
+	root, err := projectRoot(cwd)
+	if err != nil {
+		return err
+	}
+	if err := loop.EnsureInitialized(root); err != nil {
+		return err
+	}
+	verdict, err := loop.Judge(root, ids)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return printJSON(verdict)
+	}
+	fmt.Print(loop.RenderVerdict(verdict))
 	return nil
 }
 

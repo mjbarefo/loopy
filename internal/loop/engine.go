@@ -26,6 +26,9 @@ type CreateOptions struct {
 	ForbiddenPaths []string
 	Budget         Budget      // zero fields filled from defaults
 	Stuck          StuckPolicy // zero fields filled from defaults
+	// IDHint, when set, seeds the loop ID instead of the goal (race mode
+	// appends the agent name so competitors get distinct IDs).
+	IDHint string
 }
 
 // CreateLoop validates options, claims an ID, creates the isolated worktree,
@@ -70,7 +73,11 @@ func CreateLoop(root string, opts CreateOptions) (Loop, error) {
 	if err != nil {
 		return Loop{}, err
 	}
-	id := UniqueLoopID(goal, ids)
+	seed := goal
+	if strings.TrimSpace(opts.IDHint) != "" {
+		seed = opts.IDHint
+	}
+	id := UniqueLoopID(seed, ids)
 
 	worktree, branch, base, err := CreateLoopWorktree(root, id)
 	if err != nil {

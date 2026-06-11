@@ -188,6 +188,38 @@ func RenderReview(v LoopView, review *Review, transcript string, transcriptIter 
 	return b.String()
 }
 
+// RenderVerdict is the judge's plain output: the verdict line, the ranked
+// evidence table, and any overlap warnings.
+func RenderVerdict(v Verdict) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "verdict: %s\n", v.Reason)
+	b.WriteString("\n  rank  loop                              verdict   iters  diff                 flags\n")
+	for i, c := range v.Candidates {
+		verdict := "✗ " + c.Status
+		if c.Green {
+			verdict = "✓ green"
+		}
+		diff := "none"
+		if c.DiffBytes > 0 {
+			diff = fmt.Sprintf("%d file(s), %s", c.FilesChanged, HumanBytes(c.DiffBytes))
+		}
+		flags := strings.Join(c.Notes, "; ")
+		fmt.Fprintf(&b, "  %-5d %-33s %-9s %-6d %-20s %s\n", i+1, c.LoopID, verdict, c.Iterations, diff, flags)
+	}
+	if len(v.Overlaps) > 0 {
+		b.WriteString("\noverlapping files (apply at most one of each pair):\n")
+		for _, o := range v.Overlaps {
+			fmt.Fprintf(&b, "  %s ∩ %s: %s\n", o.A, o.B, strings.Join(o.Files, ", "))
+		}
+	}
+	if v.Winner != "" {
+		fmt.Fprintf(&b, "\nnext: loopy review %s\n", v.Winner)
+	} else if len(v.Candidates) > 0 {
+		fmt.Fprintf(&b, "\nreview the candidates yourself: loopy review %s …\n", v.Candidates[0].LoopID)
+	}
+	return b.String()
+}
+
 // RenderLogbookEntry is one decision in `loopy logbook` plain output.
 func RenderLogbookEntry(r Review) string {
 	date := r.DecidedAt
