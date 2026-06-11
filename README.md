@@ -16,6 +16,9 @@ You review the result with the full iteration history in front of you.**
 loopy "make the CSV importer handle quoted newlines"
 ```
 
+New here? **[QUICKSTART.md](QUICKSTART.md)** walks from install to your
+first reviewed diff.
+
 ## Why loops
 
 The unit of engineering is shifting from the prompt to the loop. Boris Cherny
