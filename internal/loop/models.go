@@ -61,19 +61,25 @@ var (
 // Loop is the central object: a goal, a verifier, a budget, and an agent,
 // iterating in an isolated worktree.
 type Loop struct {
-	ID             string      `json:"id"`
-	Goal           string      `json:"goal"`
-	Constraints    []string    `json:"constraints,omitempty"`
-	ForbiddenPaths []string    `json:"forbidden_paths,omitempty"`
-	Agent          string      `json:"agent"`
-	Verifier       []Stage     `json:"verifier"`
-	Budget         Budget      `json:"budget"`
-	Stuck          StuckPolicy `json:"stuck"`
+	ID             string   `json:"id"`
+	Goal           string   `json:"goal"`
+	Constraints    []string `json:"constraints,omitempty"`
+	ForbiddenPaths []string `json:"forbidden_paths,omitempty"`
+	Agent          string   `json:"agent"`
+	// Reviewer is an optional second registered agent that critiques the
+	// green diff before the loop parks. The critique is evidence, never a
+	// gate; it must be a different agent than the author.
+	Reviewer string      `json:"reviewer,omitempty"`
+	Verifier []Stage     `json:"verifier"`
+	Budget   Budget      `json:"budget"`
+	Stuck    StuckPolicy `json:"stuck"`
 
 	Status         string   `json:"status"`
 	ParkedReason   string   `json:"parked_reason,omitempty"`
 	IterationsUsed int      `json:"iterations_used"`
 	WallClockUsed  Duration `json:"wall_clock_used"`
+	// ReviewerExit records the reviewer agent's exit code, when one ran.
+	ReviewerExit *int `json:"reviewer_exit,omitempty"`
 
 	BaseCommit string `json:"base_commit"`
 	Branch     string `json:"branch"`
@@ -155,6 +161,7 @@ type AgentRegistry struct {
 const (
 	PhaseAgent  = "agent"
 	PhaseVerify = "verify"
+	PhaseReview = "review"
 )
 
 // Phase is the engine's live activity record: which iteration it is on, what

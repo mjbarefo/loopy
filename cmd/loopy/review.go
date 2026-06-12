@@ -74,13 +74,20 @@ func handleReview(cwd string, args []string) error {
 		}
 	}
 
+	critique := ""
+	if view.CritiquePath != "" {
+		if data, _, _, err := loop.TailFile(view.CritiquePath, loop.ViewerCapBytes); err == nil {
+			critique = string(data)
+		}
+	}
+
 	if *asJSON {
 		return printJSON(struct {
 			Loop   loop.LoopView `json:"loop"`
 			Review *loop.Review  `json:"review,omitempty"`
 		}{view, reviewPtr})
 	}
-	fmt.Print(loop.RenderReview(view, reviewPtr, transcript, transcriptIter, diff))
+	fmt.Print(loop.RenderReview(view, reviewPtr, transcript, transcriptIter, diff, critique))
 	return nil
 }
 

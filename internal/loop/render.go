@@ -177,7 +177,7 @@ func RenderIterationDetail(root, loopID string, it Iteration) string {
 // diff, verifier transcript, iteration history, and the exact commands that
 // record a decision. transcript is the (already capped) verifier log of the
 // last verified iteration; diff is the loop's cumulative patch.
-func RenderReview(v LoopView, review *Review, transcript string, transcriptIter int, diff []byte) string {
+func RenderReview(v LoopView, review *Review, transcript string, transcriptIter int, diff []byte, critique string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "review: %s · %s · %d iteration(s) · %s\n", v.ID, v.Status, v.IterationsUsed, v.WallClockUsed)
 	fmt.Fprintf(&b, "goal: %s\n", v.Goal)
@@ -196,6 +196,17 @@ func RenderReview(v LoopView, review *Review, transcript string, transcriptIter 
 	if transcript != "" {
 		fmt.Fprintf(&b, "\nverifier transcript (iteration %d):\n", transcriptIter)
 		for _, line := range tailLines(transcript, 40) {
+			fmt.Fprintf(&b, "  | %s\n", line)
+		}
+	}
+
+	if critique != "" {
+		fmt.Fprintf(&b, "\nreviewer critique (%s", v.Reviewer)
+		if v.ReviewerExit != nil && *v.ReviewerExit != 0 {
+			fmt.Fprintf(&b, ", exit %d", *v.ReviewerExit)
+		}
+		b.WriteString(") — evidence, not a gate:\n")
+		for _, line := range tailLines(critique, 40) {
 			fmt.Fprintf(&b, "  | %s\n", line)
 		}
 	}

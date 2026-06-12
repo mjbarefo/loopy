@@ -21,6 +21,7 @@ const controlPollInterval = 2 * time.Second
 type CreateOptions struct {
 	Goal           string
 	Agent          string // empty = registry default
+	Reviewer       string // optional second agent that critiques the green diff
 	Verifier       []Stage
 	Constraints    []string
 	ForbiddenPaths []string
@@ -52,6 +53,16 @@ func CreateLoop(root string, opts CreateOptions) (Loop, error) {
 	agentName, _, err := ResolveAgent(root, opts.Agent)
 	if err != nil {
 		return Loop{}, err
+	}
+	reviewerName := ""
+	if strings.TrimSpace(opts.Reviewer) != "" {
+		reviewerName, _, err = ResolveAgent(root, opts.Reviewer)
+		if err != nil {
+			return Loop{}, fmt.Errorf("reviewer: %w", err)
+		}
+		if reviewerName == agentName {
+			return Loop{}, fmt.Errorf("the reviewer must be a different agent than the author (both are %q): the creator shouldn't grade its own work", agentName)
+		}
 	}
 
 	budget := opts.Budget
@@ -89,6 +100,7 @@ func CreateLoop(root string, opts CreateOptions) (Loop, error) {
 		Constraints:    opts.Constraints,
 		ForbiddenPaths: opts.ForbiddenPaths,
 		Agent:          agentName,
+		Reviewer:       reviewerName,
 		Verifier:       opts.Verifier,
 		Budget:         budget,
 		Stuck:          stuck,
@@ -113,6 +125,7 @@ type Events struct {
 	AgentDone        func(index, exitCode int, d time.Duration)
 	StageDone        func(index int, r StageResult)
 	IterationDone    func(Iteration, Loop)
+	ReviewerDone     func(exitCode int, d time.Duration)
 	Note             func(string)
 	LoopEnded        func(Loop)
 }
@@ -200,7 +213,7 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 			iterations = append(iterations, baseline)
 			l.WallClockUsed += Duration(baseline.durationOrZero())
 			if baseline.Green {
-				return endLoop(root, l, StatusGreen, "green at baseline: the verifier already passes", ev)
+				return endGreen(root, l, "green at baseline: the verifier already passes", iterations, ev)
 			}
 			if err := SaveLoop(root, l); err != nil {
 				return l, err
@@ -210,7 +223,7 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 
 		last := iterations[len(iterations)-1]
 		if last.Green {
-			return endLoop(root, l, StatusGreen, "", ev)
+			return endGreen(root, l, "", iterations, ev)
 		}
 
 		// Hard caps.
@@ -249,7 +262,7 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 			return parkLoop(root, l, abortReason(ctrl), ev)
 		}
 		if it.Green {
-			return endLoop(root, l, StatusGreen, "", ev)
+			return endGreen(root, l, "", iterations, ev)
 		}
 	}
 }
@@ -569,4 +582,109 @@ func (it Iteration) durationOrZero() time.Duration {
 		return 0
 	}
 	return end.Sub(start)
+}
+
+// critiqueCapBytes bounds the recorded critique; a reviewer that floods
+// stdout still leaves a readable file.
+const critiqueCapBytes = 256 * 1024
+
+// endGreen parks a loop green, running the optional reviewer first. The
+// critique is evidence, never a gate: no reviewer outcome can stop the loop
+// from parking green.
+func endGreen(root string, l Loop, reason string, iterations []Iteration, ev Events) (Loop, error) {
+	l = runReviewer(root, l, iterations, ev)
+	return endLoop(root, l, StatusGreen, reason, ev)
+}
+
+// runReviewer runs the loop's reviewer agent — a different registered agent
+// with review-only instructions — against the green diff, recording its
+// output as loops/<id>/critique.md. The worktree is restored to the verified
+// state afterward: the parked diff must be exactly the one the verifier
+// approved.
+func runReviewer(root string, l Loop, iterations []Iteration, ev Events) Loop {
+	if l.Reviewer == "" || len(iterations) == 0 {
+		return l
+	}
+	last := iterations[len(iterations)-1]
+	if last.Index == 0 || last.DiffBytes == 0 {
+		ev.note("reviewer skipped: nothing to review (empty diff)")
+		return l
+	}
+	critiquePath := filepath.Join(LoopDir(root, l.ID), CritiqueFile)
+	if _, err := os.Stat(critiquePath); err == nil {
+		// A resumed engine landing on green again: the critique exists.
+		return l
+	}
+	_, reviewer, err := ResolveAgent(root, l.Reviewer)
+	if err != nil {
+		ev.note("reviewer skipped: %v", err)
+		return l
+	}
+	diffPath, err := filepath.Abs(filepath.Join(IterationDir(root, l.ID, last.Index), DiffFile))
+	if err != nil {
+		ev.note("reviewer skipped: %v", err)
+		return l
+	}
+	prompt := ComposeReviewPrompt(l, last.Index, diffPath)
+	promptPath := filepath.Join(LoopDir(root, l.ID), ReviewPromptFile)
+	if err := writeFileAtomic(promptPath, []byte(prompt), 0o644); err != nil {
+		ev.note("reviewer skipped: %v", err)
+		return l
+	}
+	command, err := ExpandAgentCommand(reviewer.Cmd, TemplateContext{
+		Prompt:     prompt,
+		PromptFile: promptPath,
+		Worktree:   l.Worktree,
+		LoopID:     l.ID,
+		Goal:       l.Goal,
+		Iteration:  last.Index,
+	})
+	if err != nil {
+		ev.note("reviewer skipped: %v", err)
+		return l
+	}
+
+	ctx, stop := watchAbort(root, l.ID)
+	defer stop()
+	_ = WritePhase(root, l.ID, Phase{Iteration: last.Index, Phase: PhaseReview, StartedAt: utcNowISO()})
+	out, err := os.OpenFile(critiquePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		ev.note("reviewer skipped: %v", err)
+		return l
+	}
+	start := time.Now()
+	_, exit, runErr := runShell(ctx, l.Worktree, command, out)
+	_ = out.Close()
+	l.ReviewerExit = &exit
+	if ev.ReviewerDone != nil {
+		ev.ReviewerDone(exit, time.Since(start))
+	}
+	if runErr != nil && !errors.Is(runErr, context.Canceled) {
+		ev.note("reviewer failed to run: %v", runErr)
+	}
+	capFile(critiquePath, critiqueCapBytes)
+
+	// The reviewer reviews; it must not ship.
+	if diff, _, snapErr := Snapshot(l.Worktree, l.BaseCommit); snapErr == nil && hashBytes(diff) != last.DiffHash {
+		if err := RestoreWorktree(l.Worktree, l.BaseCommit, diffPath); err != nil {
+			ev.note("reviewer modified the worktree and the restore failed: %v — see `loopy doctor`", err)
+		} else {
+			ev.note("reviewer modified the worktree; the verified state was restored")
+		}
+	}
+	return l
+}
+
+// capFile truncates a file to cap bytes, marking the cut.
+func capFile(path string, cap int64) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= cap {
+		return
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0o644); err == nil {
+		if err := f.Truncate(cap); err == nil {
+			_, _ = f.WriteAt([]byte("\n[critique truncated by loopy]\n"), cap)
+		}
+		_ = f.Close()
+	}
 }

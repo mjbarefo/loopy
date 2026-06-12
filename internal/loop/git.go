@@ -215,3 +215,26 @@ func runGit(repoPath string, env []string, args ...string) ([]byte, error) {
 	}
 	return cmd.CombinedOutput()
 }
+
+// RestoreWorktree forces a loop worktree back to exactly base commit + the
+// recorded diff: reset to base, drop everything untracked, re-apply the
+// verified diff. Used after a reviewer run — the reviewer reads, it must not
+// ship, and the parked diff must be exactly the one the verifier approved.
+func RestoreWorktree(worktree, baseCommit, diffPath string) error {
+	env := os.Environ()
+	if _, err := runGitChecked(worktree, env, "reset", "--hard", baseCommit); err != nil {
+		return err
+	}
+	if _, err := runGitChecked(worktree, env, "clean", "-fdq"); err != nil {
+		return err
+	}
+	info, err := os.Stat(diffPath)
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return nil
+	}
+	_, err = runGitChecked(worktree, env, "apply", diffPath)
+	return err
+}

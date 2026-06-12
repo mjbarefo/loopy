@@ -33,7 +33,8 @@ One JSON object per line. Every event has `event`, `ts` (RFC3339, UTC), and
 | `agent_done`        | `iteration`, `exit_code`, `duration_ms`                       |
 | `stage_done`        | `iteration`, `stage` {`name`, `cmd`, `exit_code`, `duration_ms`} |
 | `iteration_done`    | `iteration`, `green`, `failing_stage`, `violation`, `diff_bytes` |
-| `note`              | `note` (resume notices, stuck-detection warnings)             |
+| `note`              | `note` (resume notices, reviewer notices, stuck warnings)     |
+| `reviewer_done`     | `exit_code`, `duration_ms` (only with `--reviewer`)           |
 | `loop_ended`        | `status`, `parked_reason`                                     |
 | `result`            | `status`, `result` — the full loop view, the same object `loopy status --json` returns |
 
@@ -59,7 +60,7 @@ if [ "$verdict" -eq 0 ]; then
   # Green: review mechanically or escalate to a person. The diff and the
   # whole evidence trail are plain files:
   ls .loopy/loops/$id/iterations/        # prompt.md, agent.log, verifier.log, diff.patch per iteration
-  loopy review "$id"                     # or have a different agent critique the diff
+  loopy review "$id"                     # the critique from --reviewer <agent> shows here too
   loopy accept "$id"                     # audited; writes review.json + durable final-diff.patch
   git apply ".loopy/loops/$id/final-diff.patch"
 else
