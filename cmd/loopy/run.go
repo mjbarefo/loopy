@@ -25,6 +25,10 @@ flags:
   --max-time <dur>        wall-clock budget, e.g. 30m (default 30m)
   --constraint <text>     goal constraint; repeatable
   --forbidden-path <p>    path the agent must not touch; repeatable
+  --json                  stream progress as NDJSON events on stdout (one
+                          object per line; the final "result" event carries
+                          the same loop view as status --json). For driving
+                          loopy from scripts and outer loops: docs/orchestration.md
 
 Without --verify, loopy uses the project's stored default verifier, or infers
 one from the repo (make check, go test, npm test, ...) and asks once before
@@ -53,6 +57,7 @@ func handleRun(cwd string, args []string) error {
 	race := fs.String("race", "", "comma-separated agents to race")
 	maxIters := fs.Int("max-iters", 0, "max iterations")
 	maxTime := fs.Duration("max-time", 0, "max wall clock")
+	jsonOut := fs.Bool("json", false, "stream progress as NDJSON events")
 
 	// Accept both `loopy run "goal" --flags` and `loopy run --flags "goal"`.
 	var goal string
@@ -81,7 +86,9 @@ func handleRun(cwd string, args []string) error {
 		return err
 	}
 
-	stages, err := resolveVerifier(root, verify)
+	// JSON mode is for scripts: never mix an interactive verifier
+	// confirmation into the event stream.
+	stages, err := resolveVerifier(root, verify, !*jsonOut)
 	if err != nil {
 		return err
 	}
@@ -102,14 +109,14 @@ func handleRun(cwd string, args []string) error {
 		if *agent != "" {
 			return usagef("--agent and --race are mutually exclusive")
 		}
-		return driveRace(root, opts, splitAgents(*race))
+		return driveRace(root, opts, splitAgents(*race), *jsonOut)
 	}
 
 	l, err := loop.CreateLoop(root, opts)
 	if err != nil {
 		return err
 	}
-	return driveEngine(root, l.ID)
+	return driveEngine(root, l.ID, *jsonOut)
 }
 
 func splitAgents(list string) []string {
@@ -123,8 +130,24 @@ func splitAgents(list string) []string {
 }
 
 // driveRace runs the parallel loops with prefixed progress lines, prints
-// the judge's verdict, and exits 0 only when a winner was named.
-func driveRace(root string, opts loop.CreateOptions, agents []string) error {
+// the judge's verdict, and exits 0 only when a winner was named. With
+// jsonOut every loop's events share one NDJSON stream (loop_id tells them
+// apart) and the verdict is the final event.
+func driveRace(root string, opts loop.CreateOptions, agents []string, jsonOut bool) error {
+	if jsonOut {
+		em := newJSONEmitter(os.Stdout)
+		record, err := loop.RunRace(root, opts, agents, func(loopID, agent string) loop.Events {
+			return em.events(loopID)
+		})
+		if err != nil {
+			return err
+		}
+		em.emit(runEvent{Event: "verdict", RaceID: record.ID, Verdict: &record.Verdict})
+		if record.Verdict.Winner == "" {
+			return fmt.Errorf("race parked without a safe winner")
+		}
+		return nil
+	}
 	var mu sync.Mutex
 	say := func(prefix, format string, args ...any) {
 		mu.Lock()
@@ -164,10 +187,21 @@ func driveRace(root string, opts loop.CreateOptions, agents []string) error {
 
 // driveEngine runs the engine in the foreground with progress lines, shared
 // by run and resume. The exit-code contract: green nil, anything else error.
-func driveEngine(root, loopID string) error {
-	final, err := loop.RunEngine(root, loopID, progressEvents(root))
+// jsonOut swaps the plain lines for the NDJSON event stream plus a final
+// result event; the exit code is unchanged either way.
+func driveEngine(root, loopID string, jsonOut bool) error {
+	ev := progressEvents(root)
+	var em *jsonEmitter
+	if jsonOut {
+		em = newJSONEmitter(os.Stdout)
+		ev = em.events(loopID)
+	}
+	final, err := loop.RunEngine(root, loopID, ev)
 	if err != nil {
 		return err
+	}
+	if em != nil {
+		em.result(root, final)
 	}
 	switch final.Status {
 	case loop.StatusGreen:
@@ -244,7 +278,9 @@ func progressEvents(root string) loop.Events {
 
 // resolveVerifier applies the precedence: --verify flags > stored project
 // default > inference confirmed once and stored. No verifier, no loop.
-func resolveVerifier(root string, cmds []string) ([]loop.Stage, error) {
+// interactive=false (no TTY, or a machine-readable output mode) refuses an
+// unconfirmed inferred verifier instead of prompting.
+func resolveVerifier(root string, cmds []string, interactive bool) ([]loop.Stage, error) {
 	if len(cmds) > 0 {
 		stages := make([]loop.Stage, len(cmds))
 		for i, cmd := range cmds {
@@ -267,7 +303,7 @@ func resolveVerifier(root string, cmds []string) ([]loop.Stage, error) {
 	if !ok {
 		return nil, fmt.Errorf("no verifier: pass --verify <cmd>, or set a default in .loopy/config.json (a loop cannot exist without one)")
 	}
-	if !isTTY(os.Stdin) {
+	if !interactive || !isTTY(os.Stdin) {
 		return nil, fmt.Errorf("no verifier configured; inferred %q from %s but won't use it unconfirmed — pass --verify <cmd> or confirm interactively once", describeStages(inferred.Stages), inferred.Source)
 	}
 	fmt.Printf("no default verifier configured. Detected from %s:\n", inferred.Source)

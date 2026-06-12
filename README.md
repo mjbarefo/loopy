@@ -44,8 +44,9 @@ What stays human:
   branches, never pushes — that is the tool's permanent invariant. A green
   verifier earns a parked diff and a review. Who reviews it is yours to place:
   you, a reviewer agent, or an outer loop gating on `loopy run`'s exit code —
-  loopy is built to be a rung in a taller stack, and the evidence trail is the
-  way back down when the stack misbehaves.
+  loopy is built to be a rung in a taller stack
+  ([driving loopy from an outer loop](docs/orchestration.md)), and the
+  evidence trail is the way back down when the stack misbehaves.
 
 ## See it converge (no API keys)
 
