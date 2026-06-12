@@ -298,6 +298,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   stays ANSI-free and deterministic; its bytes changed only by the `∞`
   mark and the label/value detail lines.
 
+- **2026-06-11 — Bare `loopy` outside a git repo gets the front door, not
+  the help wall.** On a terminal, the not-a-repo case used to print the
+  full help text with the real problem buried in a trailing stderr line —
+  the owner hit it on first launch from `~`. Now it prints the identity
+  (logo, wordmark, tagline), the problem in one line (`~ is not a git
+  repository — loops live inside one`), and the exact next move (`cd` into
+  the repo, or `git init` first), then returns to the prompt. It stays CLI
+  output rather than a full-screen frame: a dead-end TUI you can only quit
+  is ceremony, and the user's next action is at their shell anyway. No
+  interactive `git init` offer — initializing a repo in `~` by accidental
+  keypress would be worse than the wall of text. Pipes keep the full help
+  (unchanged contract); exit code stays 0, same as before. Rendering lives
+  in `internal/tui` (`FrontDoor`) beside the splash that owns the
+  branding; the home directory displays as `~`.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

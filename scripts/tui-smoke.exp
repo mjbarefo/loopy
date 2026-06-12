@@ -164,6 +164,27 @@ send "q"
 expect eof
 cd $repo
 
+# --- bare launch outside any git repo: the front door ------------------------
+note "bare launch, not a git repo"
+set nogit [exec mktemp -d /tmp/loopy-tui-smoke-nogit.XXXXXX]
+cd $nogit
+set stty_init "rows 30 columns 100"
+spawn $bin
+expect {
+    -ex "engineer loops, not prompts" {}
+    timeout { fail "nogit: front door identity never appeared" }
+}
+expect {
+    -ex "is not a git repository" {}
+    timeout { fail "nogit: front door never named the problem" }
+}
+expect {
+    -ex "cd into the repo you want loops in" {}
+    timeout { fail "nogit: front door never offered the next move" }
+}
+expect eof
+cd $repo
+
 # --- a live loop: watch shows it running -------------------------------------
 note "live loop"
 exec sh -c "cd '$repo' && '$bin' agent add slow --cmd 'sleep 8' > /dev/null"

@@ -22,6 +22,38 @@ var logoArt = []string{
 
 const logoTagline = "engineer loops, not prompts"
 
+// FrontDoor is bare `loopy` outside a git repository: the same identity as
+// the splash, the problem in one line, and the exact next move — instead of
+// the full help wall with an error buried under it. CLI output, not a frame:
+// the caller prints it and the user lands back at their prompt, ready to cd.
+func FrontDoor(color bool, dir string) string {
+	text := func(c cell) string {
+		if c.styled != "" {
+			return c.styled
+		}
+		return c.plain
+	}
+	var b strings.Builder
+	b.WriteString("\n")
+	for i, art := range logoArt {
+		line := styled(color, sgrCyan, " "+art)
+		switch i {
+		case 1:
+			line = joinCells(line, styled(color, sgrBold, "   l o o p y"))
+		case 3:
+			line = joinCells(line, styled(color, sgrDim, "   "+logoTagline))
+		}
+		b.WriteString(text(line) + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(" " + dir + " is not a git repository — loops live inside one.\n\n")
+	b.WriteString(text(styled(color, sgrCyan, "   cd into the repo you want loops in, then run: loopy")) + "\n")
+	b.WriteString(text(styled(color, sgrDim, "   starting fresh? git init first — loopy sets up the rest")) + "\n")
+	b.WriteString("\n")
+	b.WriteString(text(styled(color, sgrDim, " full command surface: loopy help")) + "\n")
+	return b.String()
+}
+
 // welcomeFrame is a full-screen, vertically centered splash.
 func welcomeFrame(s frameState, root string) string {
 	if s.width < minWidth || s.height < minHeight {

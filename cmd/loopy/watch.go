@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 	"github.com/mjbarefo/loopy/internal/tui"
@@ -18,9 +19,11 @@ func launchMonitor() error {
 	}
 	root, err := projectRoot(cwd)
 	if err != nil {
-		// Not a git repo: the monitor has nothing to watch. Help out.
-		fmt.Println(rootHelp)
-		fmt.Fprintf(os.Stderr, "\nloopy: %v — run loopy inside the repository you want loops in\n", err)
+		// Not a git repo: the monitor has nothing to watch. This is the
+		// front door, not a failure — show the identity and the next move,
+		// not the help wall. (Pipes never reach here; run() routes them to
+		// the help text before launchMonitor.)
+		fmt.Print(tui.FrontDoor(colorEnabled, displayDir(cwd)))
 		return nil
 	}
 	hint, err := tui.Run(tui.Options{
@@ -35,6 +38,21 @@ func launchMonitor() error {
 		fmt.Printf("next: %s\n", hint)
 	}
 	return nil
+}
+
+// displayDir shortens the home directory to ~ for display.
+func displayDir(dir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return dir
+	}
+	if dir == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(dir, home+string(os.PathSeparator)); ok {
+		return "~" + string(os.PathSeparator) + rest
+	}
+	return dir
 }
 
 func handleWatch(cwd string, args []string) error {

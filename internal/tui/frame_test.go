@@ -270,6 +270,28 @@ func TestWelcomeFrame(t *testing.T) {
 	}
 }
 
+func TestFrontDoor(t *testing.T) {
+	out := FrontDoor(false, "~")
+	for _, want := range []string{
+		"l o o p y",
+		"engineer loops, not prompts",
+		"~ is not a git repository",
+		"cd into the repo you want loops in, then run: loopy",
+		"git init first",
+		"loopy help",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("front door missing %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Error("color-off front door contains ANSI escapes")
+	}
+	if colored := FrontDoor(true, "~"); !strings.Contains(colored, "\x1b[36m") {
+		t.Error("color-on front door should carry the cyan identity")
+	}
+}
+
 func TestFrameNewLoopForm(t *testing.T) {
 	s := wideState()
 	s.form = formState{
