@@ -113,6 +113,8 @@ func run(args []string) error {
 		return handleAccept(cwd, args[1:])
 	case "reject":
 		return handleReject(cwd, args[1:])
+	case "delete":
+		return handleDelete(cwd, args[1:])
 	case "logbook":
 		return handleLogbook(cwd, args[1:])
 	case "judge":
@@ -161,6 +163,8 @@ judge:
   loopy accept <loop-id>                record the decision; non-green needs
                                         --override --reason (kept verbatim)
   loopy reject <loop-id> [--reason]     decline; evidence kept, worktree freed
+  loopy delete <loop-id>                remove a loop and all its evidence
+                                        (the logbook keeps one line)
   loopy judge <id> <id> [...]           rank finished loops by their evidence
                                         (deterministic; used by --race)
   loopy logbook [--json]                durable memory of every decision

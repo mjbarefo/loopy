@@ -43,14 +43,15 @@ type model struct {
 	detected         []loop.AgentSuggestion
 	form             formState
 
-	focusDetail  bool
-	tab          tabID
-	scroll       int // -1 = follow the tail
-	art          artifact
-	confirmAbort bool
-	showHelp     bool
-	flash        string
-	flashUntil   time.Time
+	focusDetail   bool
+	tab           tabID
+	scroll        int // -1 = follow the tail
+	art           artifact
+	confirmAbort  bool
+	confirmDelete bool
+	showHelp      bool
+	flash         string
+	flashUntil    time.Time
 
 	// exitHint is printed by the watch command after the program exits —
 	// the deep link out of the monitor (accept/reject stay in the CLI).
@@ -240,6 +241,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirmAbort = false
 		return m, nil
 	}
+	if m.confirmDelete {
+		switch key {
+		case "y":
+			m.requestDelete()
+		case "n", "esc", "q", "ctrl+c":
+			m.say("delete cancelled")
+		}
+		m.confirmDelete = false
+		return m, nil
+	}
 
 	switch key {
 	case "ctrl+c", "q":
@@ -339,6 +350,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.say("nothing to abort")
 		}
 		return m, nil
+	case "d":
+		switch v := m.current(); {
+		case v == nil:
+			m.say("nothing to delete")
+		case v.Live:
+			m.say("a live engine holds %s — abort it first (a)", v.ID)
+		default:
+			m.confirmDelete = true
+		}
+		return m, nil
 	case "o":
 		if v := m.current(); v != nil && v.NextCommand != "" {
 			m.exitHint = v.NextCommand
@@ -416,6 +437,35 @@ func (m *model) requestAbort() {
 	m.say("abort requested — the engine stops within seconds")
 }
 
+// requestDelete shells out to the audited CLI (`loopy delete <id>`): the
+// monitor itself never writes loop state, same rule as resume spawning a
+// normal engine.
+func (m *model) requestDelete() {
+	v := m.current()
+	if v == nil {
+		m.say("nothing to delete")
+		return
+	}
+	if out, err := runDelete(m.root, v.ID); err != nil {
+		m.say("delete failed: %s", firstLine(out, err))
+		return
+	}
+	m.say("deleted %s — the logbook keeps the record", v.ID)
+	m.selectedID = ""
+	m.reload()
+}
+
+// firstLine flattens a child command's output (or its error) to one flash.
+func firstLine(out string, err error) string {
+	if t := strings.TrimSpace(out); t != "" {
+		if i := strings.IndexByte(t, '\n'); i >= 0 {
+			t = t[:i]
+		}
+		return t
+	}
+	return err.Error()
+}
+
 func (m *model) scrollBy(delta int) {
 	lines := m.bodyLineCount()
 	rows := m.bodyRows()
@@ -477,6 +527,7 @@ func (m model) frameState() frameState {
 		scroll:           m.scroll,
 		art:              m.art,
 		confirmAbort:     m.confirmAbort,
+		confirmDelete:    m.confirmDelete,
 		flash:            m.flash,
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
