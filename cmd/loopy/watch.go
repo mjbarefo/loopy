@@ -4,34 +4,60 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 	"github.com/mjbarefo/loopy/internal/tui"
 )
 
 // launchMonitor is bare `loopy`: the monitor with the welcome splash. It
-// works in an uninitialized repo — the empty state walks through setup.
+// works in an uninitialized repo — the empty state walks through setup —
+// and outside any repo it becomes the front door: pick a nearby repository
+// (or git-init in place) and flow straight into that repo's monitor.
 func launchMonitor() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
+	welcome := true
 	root, err := projectRoot(cwd)
 	if err != nil {
-		// Not a git repo: the monitor has nothing to watch. Help out.
-		fmt.Println(rootHelp)
-		fmt.Fprintf(os.Stderr, "\nloopy: %v — run loopy inside the repository you want loops in\n", err)
-		return nil
+		// Not a git repo: the monitor has nothing to watch — the picker is
+		// the front door. It opens instantly and the repo scan streams in
+		// behind it. (Pipes never reach here; run() routes them to the
+		// help text before launchMonitor.)
+		choice, initHere, err := tui.PickRepo(cwd, colorEnabled)
+		if err != nil {
+			return err
+		}
+		switch {
+		case initHere:
+			// An explicit, labeled choice — never an accidental keypress.
+			if out, err := exec.Command("git", "init").CombinedOutput(); err != nil {
+				return fmt.Errorf("git init: %v\n%s", err, out)
+			}
+			fmt.Printf("initialized a git repository in %s\n", cwd)
+			root = cwd
+		case choice != "":
+			root = choice
+		default:
+			return nil // the user looked and left; that is an answer
+		}
+		welcome = false // the picker was the branded moment; skip the splash
 	}
 	hint, err := tui.Run(tui.Options{
 		Root:    root,
 		Color:   colorEnabled,
-		Welcome: true,
+		Welcome: welcome,
 	})
 	if err != nil {
 		return err
 	}
 	if hint != "" {
+		// The hint must work from where the user actually is.
+		if root != cwd {
+			hint = fmt.Sprintf("cd %s && %s", root, hint)
+		}
 		fmt.Printf("next: %s\n", hint)
 	}
 	return nil

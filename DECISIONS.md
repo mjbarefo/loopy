@@ -275,6 +275,123 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   action. Accept/reject stay in the audited CLI. `watch` and `--once` are
   unchanged (no splash).
 
+- **2026-06-11 — Monitor identity pass: the splash's vocabulary in the
+  working frames.** The splash set the identity (cyan logo, bold wordmark,
+  dim metadata, one accent doing real work); the monitor now speaks it
+  without losing a column of density. The calls: `∞` is the compact logo
+  mark in the header (`∞ loopy` — an East Asian Ambiguous glyph, the same
+  width class as the `●`/`▶` already in every frame); count numbers are
+  bold with dim `·` separators; rules and the rail separator are dim so
+  chrome recedes behind content. Color discipline is one status accent per
+  row: the rail colors only the glyph (cyan `▶` cursor, bold selected ID,
+  dim budget — whole-row painting is gone), the overview timeline colors
+  only the verdict cell (`RenderIterationRowParts` re-exposes the existing
+  row as label/verdict/metrics so the TUI accents without re-deriving),
+  and the baseline row stays fully dim. The detail header borrows the
+  form's typography — dim labels (`goal`, `agent`, `iter`, `wall`), plain
+  values — replacing two all-dim lines. Inverse video left the palette:
+  the active tab is cyan-bold and the brackets remain the NO_COLOR signal.
+  Quoted tails keep the CLI's ASCII `| ` gutter (now dim) rather than `│`,
+  so the box-drawing bar means exactly one thing: the rail separator.
+  Help keys and the broken-state `run: loopy doctor` line take cyan — keys
+  and next commands are actions, and actions own the accent. `--once`
+  stays ANSI-free and deterministic; its bytes changed only by the `∞`
+  mark and the label/value detail lines.
+
+- **2026-06-11 — Bare `loopy` outside a git repo gets the front door, not
+  the help wall.** On a terminal, the not-a-repo case used to print the
+  full help text with the real problem buried in a trailing stderr line —
+  the owner hit it on first launch from `~`. Now it prints the identity
+  (logo, wordmark, tagline), the problem in one line (`~ is not a git
+  repository — loops live inside one`), and the exact next move (`cd` into
+  the repo, or `git init` first), then returns to the prompt. It stays CLI
+  output rather than a full-screen frame: a dead-end TUI you can only quit
+  is ceremony, and the user's next action is at their shell anyway. No
+  interactive `git init` offer — initializing a repo in `~` by accidental
+  keypress would be worse than the wall of text. Pipes keep the full help
+  (unchanged contract); exit code stays 0, same as before. Rendering lives
+  in `internal/tui` (`FrontDoor`) beside the splash that owns the
+  branding; the home directory displays as `~`.
+
+- **2026-06-11 — The logo is now a pixel lemniscate.** The original mark
+  didn't resolve into anything at a glance; the owner asked for something
+  circular/loop-inspired. The new art is two textured loops whose inner
+  walls slope into an X crossing at the center — a literal infinity, drawn
+  with the same two weights (`██` stroke, `░░` weave) and the same 5×18
+  footprint, so every layout that centers or measures it is untouched.
+  One source of truth in `welcome.go` (`logoArt`); README updated to
+  match. The header's compact `∞` mark now abbreviates the actual logo.
+
+- **2026-06-11 — Outside a repo, the front door becomes a repo picker.**
+  When bare `loopy` finds git repositories nearby, it offers them instead
+  of instructions: a chooser with the identity block, `↑↓`/enter into the
+  chosen repo's monitor (onboarding takes over from there), `g` to
+  git-init in place — `g` is a deliberate labeled keypress, never the
+  default, so an accidental enter can't initialize `~`. Discovery
+  (`loop.FindRepos`, stdlib-only) walks breadth-first, bounded in depth
+  (4), directories (8000), results (100), and time (1.5s) — a front door
+  must open instantly, so an incomplete list beats a complete hang; it
+  skips hidden trees, `node_modules`/`vendor`, and macOS home furniture,
+  and never descends past a repo root. Repos already holding loops sort
+  first (then by git activity). The picker skips the splash afterwards —
+  it was the branded moment — and exit hints from a picked repo are
+  prefixed with `cd <repo> &&` so the printed command works from where
+  the user actually is. With no repos found, the static front-door text
+  remains. The monitor itself still never selects repos: the picker only
+  runs when there is no repo at all.
+
+- **2026-06-11 — The repo scan streams into the picker; no pre-scan, no
+  static fallback.** The first cut scanned synchronously with a 1.5s
+  cliff before deciding whether to show the picker — and on a real macOS
+  home it showed the owner the dead-end text instead: a cold-cache walk
+  can blow any fixed budget, and a TCC block on Documents/Desktop makes
+  ReadDir fail silently. Now the picker opens instantly and the scan
+  (`loop.ScanRepos`, emit-callback form; `FindRepos` remains the sync
+  wrapper) streams candidates in behind it with an 8s budget. The cursor
+  rests on the top-ranked repo until the user navigates, then sticks to
+  their choice through re-sorts. When the scan ends empty the picker
+  itself carries the old front-door guidance — `FrontDoor` is gone — and
+  permission-denied near-top directories are reported by name with the
+  System Settings → Privacy & Security path, because a silent TCC block
+  is otherwise indistinguishable from having no repos.
+
+- **2026-06-11 — Picker copy: "pick a project to run loops in", not "pick
+  where loops should live".** The first phrasing read as a storage
+  decision and prompted exactly that user question ("where should the
+  loops live?"). The picker chooses a project, not a home for data; a dim
+  annotation under the header ("loop state lives inside the repo it works
+  on, under .loopy/") answers the storage question in place.
+
+- **2026-06-11 — The new-loop form became a five-step wizard.** Owner
+  feedback: composing a loop on the CLI (goal + repeated `--verify` flags
+  + budget flags) assumes someone who already knows agentic development;
+  the monitor should walk the user through it. `n` now steps through
+  goal → agent → verifier → budget → confirm, one question per screen in
+  plain words, defaults prefilled, enter advances, esc walks back. The
+  agent step lists registered agents (space marks several — that races
+  them, one loop per agent via the same detached-resume path, with
+  `loopy judge <ids>` suggested when they all park; the monitor still
+  never drives engines, so the CLI's blocking `RunRace`/auto-judge stays
+  CLI-only and no race.json is written from the TUI). When no agents are
+  registered the step offers the detected CLIs and registers the chosen
+  one in place, so `n` now only requires an initialized repo. The
+  verifier step is an editable command with provenance shown — an
+  untouched stored/inferred prefill keeps its multi-stage form and the
+  confirm-once storage contract; an edited command runs as a single
+  stage for this loop only and is not stored (matching `--verify`
+  semantics). Budget fields are validated text, not flags.
+
+- **2026-06-11 — Default iteration budget: 8 → 5.** Owner asked to lean
+  smaller (citing reported research that ~3 rounds is usually enough).
+  Self-refinement returns do fall off steeply after the first feedback
+  rounds, and stuck detection (no-change, same-failure-3x) parks
+  degenerate loops before any cap — but this repo's own history argues
+  against 3: the display-width loop did 4 productive iterations of real
+  diagnostic work. 5 covers the observed maximum with margin while
+  halving the worst-case tail; the cap is a ceiling on slow progress,
+  not a target, since green ends the loop immediately. Per-loop override
+  stays one field in the wizard and `--max-iters` in the CLI.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -47,8 +47,14 @@ type StuckPolicy struct {
 
 // DefaultBudget and DefaultStuckPolicy are applied when a loop or the project
 // config doesn't say otherwise.
+//
+// MaxIterations 5: self-refinement returns fall off steeply after the first
+// few feedback rounds, and stuck detection parks degenerate loops before any
+// cap — but real loops in this repo have needed 4 productive iterations, so
+// 3 would cut genuine work short. The cap is a ceiling on slow progress, not
+// a target: green stops the loop the moment it lands.
 var (
-	DefaultBudget      = Budget{MaxIterations: 8, MaxWallClock: Duration(30 * time.Minute)}
+	DefaultBudget      = Budget{MaxIterations: 5, MaxWallClock: Duration(30 * time.Minute)}
 	DefaultStuckPolicy = StuckPolicy{SameFailureRepeats: 3, NoChangeRepeats: 1}
 )
 

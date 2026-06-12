@@ -21,7 +21,7 @@ flags:
   --agent <name>          registered agent to use (default: registry default)
   --race <a,b[,c]>        race these agents on the goal in parallel worktrees;
                           the deterministic judge ranks the parked results
-  --max-iters <n>         iteration budget (default 8)
+  --max-iters <n>         iteration budget (default 5)
   --max-time <dur>        wall-clock budget, e.g. 30m (default 30m)
   --constraint <text>     goal constraint; repeatable
   --forbidden-path <p>    path the agent must not touch; repeatable

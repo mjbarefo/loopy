@@ -12,13 +12,13 @@ import (
 // humans see. Color is applied after plain-text layout and is never the only
 // signal — every verdict keeps its word or glyph.
 //
-// Layout (no box chrome; rules and one rail separator):
+// Layout (no box chrome; dim rules and one dim rail separator):
 //
-//	 loopy   1 running · 1 paused · 2 to review            ? help · q quit
+//	 ∞ loopy   1 running · 1 paused · 2 to review          ? help · q quit
 //	─────────────────────────────────────────────────────────────────────
 //	▶ ● fix-csv-quoting      2/8 │ ● fix-csv-quoting — running
-//	  ✓ green-deploy-docs    3/6 │ goal: make the importer handle …
-//	  ✗ flaky-importer       8/8 │ agent claude · wall 4m10s of 30m
+//	  ✓ green-deploy-docs    3/6 │ goal   make the importer handle …
+//	  ✗ flaky-importer       8/8 │ agent  claude · iter 2/8 · wall 4m10s …
 //	                             │ now: agent running · iter 3 · 1m32s
 //	                             │
 //	                             │ [overview]  live   diff   verifier
@@ -39,7 +39,6 @@ const (
 const (
 	sgrBold   = "1"
 	sgrDim    = "2"
-	sgrInvert = "7"
 	sgrRed    = "31"
 	sgrGreen  = "32"
 	sgrYellow = "33"
@@ -151,17 +150,19 @@ func renderFrame(s frameState) string {
 		rail = railLines(s, railW, contentRows)
 	}
 
+	// Chrome recedes: rules and the rail separator are dim so the content
+	// carries the frame.
 	var b strings.Builder
 	b.WriteString(padCell(headerCell(s), s.width) + "\n")
-	b.WriteString(rule(s.width) + "\n")
+	b.WriteString(paint(s.color, sgrDim, rule(s.width)) + "\n")
 	for i := 0; i < contentRows; i++ {
 		if railW > 0 {
 			b.WriteString(padCell(lineAt(rail, i), railW))
-			b.WriteString("│")
+			b.WriteString(paint(s.color, sgrDim, "│"))
 		}
 		b.WriteString(" " + padCell(lineAt(detail, i), detailW) + "\n")
 	}
-	b.WriteString(rule(s.width) + "\n")
+	b.WriteString(paint(s.color, sgrDim, rule(s.width)) + "\n")
 	b.WriteString(padCell(footerCell(s, sel, s.width), s.width) + "\n")
 	return b.String()
 }
@@ -173,7 +174,9 @@ func lineAt(lines []cell, i int) cell {
 	return cell{}
 }
 
-// headerCell is the project pulse: how many loops are in each bucket.
+// headerCell is the identity lockup plus the project pulse: the compact
+// logo mark, the wordmark, and how many loops are in each bucket — bold
+// numbers, plain words, dim separators.
 func headerCell(s frameState) cell {
 	var counts = map[string]int{}
 	live := 0
@@ -183,33 +186,50 @@ func headerCell(s frameState) cell {
 			live++
 		}
 	}
-	var parts []string
+	type bucket struct {
+		n    int
+		word string
+	}
+	var parts []bucket
 	if live > 0 {
-		parts = append(parts, fmt.Sprintf("%d running", live))
+		parts = append(parts, bucket{live, "running"})
 	}
 	if stale := counts[loop.StatusRunning] - live; stale > 0 {
-		parts = append(parts, fmt.Sprintf("%d stale", stale))
+		parts = append(parts, bucket{stale, "stale"})
 	}
 	if n := counts[loop.StatusPaused]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d paused", n))
+		parts = append(parts, bucket{n, "paused"})
 	}
 	if n := counts[loop.StatusGreen]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d green to review", n))
+		parts = append(parts, bucket{n, "green to review"})
 	}
 	if n := counts[loop.StatusParked]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d parked", n))
+		parts = append(parts, bucket{n, "parked"})
 	}
 	if n := counts[loop.StatusAccepted] + counts[loop.StatusRejected]; n > 0 {
-		parts = append(parts, fmt.Sprintf("%d decided", n))
+		parts = append(parts, bucket{n, "decided"})
 	}
 	if len(s.broken) > 0 {
-		parts = append(parts, fmt.Sprintf("%d unreadable", len(s.broken)))
+		parts = append(parts, bucket{len(s.broken), "unreadable"})
 	}
-	summary := "no loops yet"
-	if len(parts) > 0 {
-		summary = strings.Join(parts, " · ")
+	cells := []cell{
+		styled(s.color, sgrCyan, " ∞ "),
+		styled(s.color, sgrBold, "loopy"),
+		plainCell("   "),
 	}
-	left := joinCells(styled(s.color, sgrBold, " loopy"), plainCell("   "+summary))
+	if len(parts) == 0 {
+		cells = append(cells, styled(s.color, sgrDim, "no loops yet"))
+	}
+	for i, p := range parts {
+		if i > 0 {
+			cells = append(cells, styled(s.color, sgrDim, " · "))
+		}
+		cells = append(cells,
+			styled(s.color, sgrBold, fmt.Sprintf("%d", p.n)),
+			plainCell(" "+p.word),
+		)
+	}
+	left := joinCells(cells...)
 	if s.once {
 		return left
 	}
@@ -283,31 +303,43 @@ func railLines(s frameState, railW, rows int) []cell {
 	if total > rows && s.selected >= rows {
 		start = s.selected - rows + 1
 	}
+	// One accent per row: the status glyph carries the color, the cursor is
+	// cyan, the ID is bold only when selected, and the budget is metadata.
 	idW := railW - 2 - 2 - 2 - 5
 	for i := start; i < len(s.loops) && len(lines) < rows; i++ {
 		v := s.loops[i]
-		marker := "  "
-		if i == s.selected {
-			marker = "▶ "
+		marker := styled(s.color, sgrCyan, "▶ ")
+		if i != s.selected {
+			marker = plainCell("  ")
 		}
 		glyph, sgr := statusGlyph(v)
+		id := loop.PadDisplay(v.ID, idW)
+		idCell := plainCell(id)
+		if i == s.selected {
+			idCell = styled(s.color, sgrBold, id)
+		}
 		iters := fmt.Sprintf("%d/%d", v.IterationsUsed, v.MaxIterations)
 		if loop.DisplayWidth(iters) > 5 {
 			iters = fmt.Sprintf("%d", v.IterationsUsed)
 		}
-		plain := marker + glyph + " " + loop.PadDisplay(v.ID, idW) + "  " + fmt.Sprintf("%5s", iters)
-		text := paint(s.color, sgr, plain)
-		if i == s.selected {
-			text = paint(s.color, sgrBold, text)
-		}
-		lines = append(lines, cell{plain: plain, styled: text})
+		lines = append(lines, joinCells(
+			marker,
+			styled(s.color, sgr, glyph),
+			plainCell(" "),
+			idCell,
+			styled(s.color, sgrDim, "  "+fmt.Sprintf("%5s", iters)),
+		))
 	}
 	for _, b := range s.broken {
 		if len(lines) >= rows {
 			break
 		}
-		plain := "  ✗ " + loop.TruncateDisplay(b.ID, idW) + " (unreadable)"
-		lines = append(lines, styled(s.color, sgrRed, loop.TruncateDisplay(plain, railW)))
+		lines = append(lines, joinCells(
+			plainCell("  "),
+			styled(s.color, sgrRed, "✗"),
+			plainCell(" "+loop.TruncateDisplay(b.ID, idW)),
+			styled(s.color, sgrDim, " (unreadable)"),
+		))
 	}
 	return lines
 }
@@ -329,17 +361,28 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 		return helpLines(s)
 	}
 
+	// The detail header borrows the form's typography: dim labels, plain
+	// values, the status accent on the glyph and phrase only.
 	lines := make([]cell, 0, rows)
 	glyph, sgr := statusGlyph(*sel)
 	lines = append(lines, joinCells(
 		styled(s.color, sgr, glyph+" "),
 		styled(s.color, sgrBold, sel.ID),
-		plainCell(" — "),
+		styled(s.color, sgrDim, " — "),
 		styled(s.color, sgr, statusPhrase(*sel)),
 	))
-	lines = append(lines, styled(s.color, sgrDim, "goal: "+loop.TruncateDisplay(sel.Goal, width-6)))
-	meta := fmt.Sprintf("agent %s · iter %d/%d · wall %s of %s", sel.Agent, sel.IterationsUsed, sel.MaxIterations, sel.WallClockUsed, sel.MaxWallClock)
-	lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(meta, width)))
+	lines = append(lines, joinCells(
+		styled(s.color, sgrDim, "goal   "),
+		plainCell(loop.TruncateDisplay(sel.Goal, width-7)),
+	))
+	lines = append(lines, joinCells(
+		styled(s.color, sgrDim, "agent  "),
+		plainCell(sel.Agent),
+		styled(s.color, sgrDim, " · iter "),
+		plainCell(fmt.Sprintf("%d/%d", sel.IterationsUsed, sel.MaxIterations)),
+		styled(s.color, sgrDim, " · wall "),
+		plainCell(fmt.Sprintf("%s of %s", sel.WallClockUsed, sel.MaxWallClock)),
+	))
 	lines = append(lines, activityLine(s, *sel, width))
 	lines = append(lines, cell{})
 	lines = append(lines, tabBar(s))
@@ -389,11 +432,13 @@ func activityLine(s frameState, v loop.LoopView, width int) cell {
 	return cell{}
 }
 
+// tabBar marks the active view in the accent color; the brackets are the
+// signal when color is off. Inverse video is not in this product's voice.
 func tabBar(s frameState) cell {
 	cells := make([]cell, 0, tabCount*2)
 	for i, name := range tabNames {
 		if tabID(i) == s.tab {
-			cells = append(cells, styled(s.color, sgrInvert, "["+name+"]"))
+			cells = append(cells, styled(s.color, sgrBold+";"+sgrCyan, "["+name+"]"))
 		} else {
 			cells = append(cells, styled(s.color, sgrDim, " "+name+" "))
 		}
@@ -425,17 +470,24 @@ func overviewBody(s frameState, v loop.LoopView, width int) []cell {
 		lines = append(lines, plainCell(" waiting for the baseline verify…"))
 		return lines
 	}
+	// The timeline accents the verdict cell only; the metrics stay plain and
+	// the baseline recedes. Whole-row color is reserved for the live row.
 	lines = append(lines, styled(s.color, sgrDim, " "+loop.IterationRowHeader))
 	for _, it := range v.Iterations {
-		row := " " + loop.RenderIterationRow(it)
+		label, verdict, metrics := loop.RenderIterationRowParts(it)
+		if it.Baseline {
+			lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(" "+loop.RenderIterationRow(it), width)))
+			continue
+		}
 		sgr := sgrGreen
 		if !it.Green {
 			sgr = sgrRed
 		}
-		if it.Baseline {
-			sgr = sgrDim
-		}
-		lines = append(lines, styled(s.color, sgr, loop.TruncateDisplay(row, width)))
+		lines = append(lines, joinCells(
+			plainCell(fmt.Sprintf(" %-5s ", label)),
+			styled(s.color, sgr, loop.PadDisplay(verdict, 18)),
+			plainCell(" "+metrics),
+		))
 	}
 	if v.Status == loop.StatusRunning && v.Live {
 		label := fmt.Sprintf(" %-5d ● %s…", len(v.Iterations), runningVerb(v))
@@ -444,7 +496,7 @@ func overviewBody(s frameState, v loop.LoopView, width int) []cell {
 	if v.LastFeedback != "" && v.Status != loop.StatusGreen && v.Status != loop.StatusAccepted {
 		lines = append(lines, cell{}, styled(s.color, sgrDim, " last feedback tail:"))
 		for _, fl := range strings.Split(strings.TrimRight(v.LastFeedback, "\n"), "\n") {
-			lines = append(lines, plainCell(" | "+loop.TruncateDisplay(fl, width-4)))
+			lines = append(lines, quoted(s, fl, width))
 		}
 	}
 	// A short live tail keeps "what is it doing" on the default view; the
@@ -456,10 +508,20 @@ func overviewBody(s frameState, v loop.LoopView, width int) []cell {
 			tail = tail[len(tail)-6:]
 		}
 		for _, tl := range tail {
-			lines = append(lines, plainCell(" | "+loop.TruncateDisplay(strings.ReplaceAll(tl, "\t", "    "), width-4)))
+			lines = append(lines, quoted(s, strings.ReplaceAll(tl, "\t", "    "), width))
 		}
 	}
 	return lines
+}
+
+// quoted is the shared gutter for quoted output (feedback and live tails):
+// the same dim "| " gutter the CLI renderers quote with, then the line
+// verbatim. ("│" stays reserved for the rail separator.)
+func quoted(s frameState, line string, width int) cell {
+	return joinCells(
+		styled(s.color, sgrDim, " | "),
+		plainCell(loop.TruncateDisplay(line, width-4)),
+	)
 }
 
 func runningVerb(v loop.LoopView) string {
@@ -514,13 +576,20 @@ func emptyStateLines(s frameState, width, rows int) []cell {
 	}
 	rowsOut = append(rowsOut,
 		cell{},
-		plainCell(" no loops yet — the path to the first one:"),
+		joinCells(
+			styled(s.color, sgrBold, " no loops yet"),
+			plainCell(" — the path to the first one:"),
+		),
 		cell{},
 	)
 
 	// Step 1: init.
 	if s.initialized {
-		rowsOut = append(rowsOut, plainCell("   1. initialize the repo ✓  (.loopy/ exists)"))
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   1. initialize the repo "),
+			styled(s.color, sgrGreen, "✓"),
+			styled(s.color, sgrDim, "  (.loopy/ exists)"),
+		))
 	} else {
 		rowsOut = append(rowsOut, joinCells(
 			plainCell("   1. "),
@@ -532,7 +601,11 @@ func emptyStateLines(s frameState, width, rows int) []cell {
 	// Step 2: an agent.
 	switch {
 	case s.agentsRegistered:
-		rowsOut = append(rowsOut, plainCell("   2. register an agent ✓  (see loopy agent list)"))
+		rowsOut = append(rowsOut, joinCells(
+			plainCell("   2. register an agent "),
+			styled(s.color, sgrGreen, "✓"),
+			styled(s.color, sgrDim, "  (see loopy agent list)"),
+		))
 	case !s.initialized:
 		rowsOut = append(rowsOut, styled(s.color, sgrDim, "   2. register an agent"))
 	case len(s.detected) > 0:
@@ -575,33 +648,40 @@ func brokenOnlyLines(s frameState, width int) []cell {
 	for _, b := range s.broken {
 		lines = append(lines, plainCell("   "+loop.TruncateDisplay(b.ID+": "+b.Err, width-3)))
 	}
-	lines = append(lines, cell{}, plainCell(" run: loopy doctor"))
+	lines = append(lines, cell{}, styled(s.color, sgrCyan, " run: loopy doctor"))
 	return lines
 }
 
+// helpLines styles keys the way onboarding styles its press-hints: the key
+// is the action, so the key gets the accent.
 func helpLines(s frameState) []cell {
-	rows := []string{
-		"",
-		" keys",
-		"   ↑/↓ or j/k     select loop (list) · scroll (detail)",
-		"   enter          focus the detail pane for scrolling",
-		"   esc            back to the loop list · dismiss",
-		"   tab / 1-4      switch view: overview, live, diff, verifier",
-		"   n              start a new loop (goal + the project verifier)",
-		"   g / G          jump to top / follow the tail",
-		"   p              pause at the next iteration boundary",
-		"   r              resume a paused loop (spawns the engine)",
-		"   a              abort (asks for confirmation)",
-		"   o              quit and print the next command",
-		"   q              quit",
+	keys := []struct{ key, desc string }{
+		{"↑/↓ or j/k", "select loop (list) · scroll (detail)"},
+		{"enter", "focus the detail pane for scrolling"},
+		{"esc", "back to the loop list · dismiss"},
+		{"tab / 1-4", "switch view: overview, live, diff, verifier"},
+		{"n", "start a new loop (goal + the project verifier)"},
+		{"g / G", "jump to top / follow the tail"},
+		{"p", "pause at the next iteration boundary"},
+		{"r", "resume a paused loop (spawns the engine)"},
+		{"a", "abort (asks for confirmation)"},
+		{"o", "quit and print the next command"},
+		{"q", "quit"},
+	}
+	lines := []cell{{}, styled(s.color, sgrBold, " keys")}
+	for _, k := range keys {
+		lines = append(lines, joinCells(
+			styled(s.color, sgrCyan, "   "+loop.PadDisplay(k.key, 12)),
+			plainCell("  "+k.desc),
+		))
+	}
+	for _, note := range []string{
 		"",
 		" the monitor never writes loop state; controls go through",
 		" control.json and the engine honors them at phase boundaries.",
 		" accept and reject stay in the CLI: loopy review <id>.",
-	}
-	lines := make([]cell, 0, len(rows))
-	for _, r := range rows {
-		lines = append(lines, plainCell(r))
+	} {
+		lines = append(lines, styled(s.color, sgrDim, note))
 	}
 	return lines
 }
@@ -610,7 +690,7 @@ func helpLines(s frameState) []cell {
 // they are never cut mid-word.
 var listKeys = []string{"↑↓ loop", "n new", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
 var detailKeys = []string{"↑↓ scroll", "g top", "G follow", "esc back", "tab view", "? help", "q quit"}
-var formKeys = []string{"type the goal", "enter start", "esc cancel"}
+var formKeys = []string{"enter next step", "esc back", "ctrl+c quit"}
 
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	switch {

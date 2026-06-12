@@ -1,0 +1,258 @@
+package tui
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/mjbarefo/loopy/internal/loop"
+)
+
+// The front door: bare `loopy` outside a git repository. It opens instantly
+// and the repo scan streams in behind it — pick a repo and land in its
+// monitor (onboarding takes over from there), or press g to git-init right
+// here. When the scan ends empty it says what to do instead, including the
+// macOS privacy hint when directories were unreadable. The picker renders
+// nothing but the choice; all repo state stays untouched until the monitor
+// runs.
+
+type pickerState struct {
+	width, height int
+	color         bool
+	start         string // the non-repo directory loopy was launched from
+	repos         []loop.RepoCandidate
+	selected      int
+	navigated     bool // selection sticks only once the user has moved it
+	scanning      bool
+	denied        []string // unreadable near-top dirs (macOS privacy blocks)
+
+	choice   string // the picked repo root; empty until enter
+	initHere bool   // g: git init in start instead
+}
+
+type repoFoundMsg struct{ repo loop.RepoCandidate }
+type scanDoneMsg struct{ denied []string }
+
+// PickRepo runs the chooser and returns the selected repo root, or
+// initHere=true when the user asked to git-init the current directory.
+// Both are zero when the user quit.
+func PickRepo(start string, color bool) (choice string, initHere bool, err error) {
+	m := pickerModel{pickerState{
+		width: 80, height: 24,
+		color: color, start: start, scanning: true,
+	}}
+	p := tea.NewProgram(m)
+	go func() {
+		// Send blocks until the program is receiving and is a no-op after
+		// it exits — the scan can outlive an impatient user harmlessly.
+		summary := loop.ScanRepos(start, func(c loop.RepoCandidate) {
+			p.Send(repoFoundMsg{c})
+		})
+		p.Send(scanDoneMsg{summary.Denied})
+	}()
+	res, err := p.Run()
+	if err != nil {
+		return "", false, err
+	}
+	if final, ok := res.(pickerModel); ok {
+		return final.choice, final.initHere, nil
+	}
+	return "", false, nil
+}
+
+type pickerModel struct{ pickerState }
+
+func (m pickerModel) Init() tea.Cmd { return nil }
+
+func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case repoFoundMsg:
+		// Until the user moves, the cursor rests on the top-ranked repo;
+		// after that it follows their repo as the list grows and re-sorts.
+		var keep string
+		if m.navigated && len(m.repos) > 0 {
+			keep = m.repos[m.selected].Path
+		}
+		m.repos = append(m.repos, msg.repo)
+		loop.SortRepoCandidates(m.repos)
+		m.selected = 0
+		for i, r := range m.repos {
+			if keep != "" && r.Path == keep {
+				m.selected = i
+				break
+			}
+		}
+		return m, nil
+	case scanDoneMsg:
+		m.scanning = false
+		m.denied = msg.denied
+		return m, nil
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "q", "esc", "ctrl+c":
+			return m, tea.Quit
+		case "enter":
+			if len(m.repos) > 0 {
+				m.choice = m.repos[m.selected].Path
+				return m, tea.Quit
+			}
+			return m, nil
+		case "g":
+			m.initHere = true
+			return m, tea.Quit
+		case "up", "k":
+			m.selected = clamp(m.selected-1, 0, len(m.repos)-1)
+			m.navigated = true
+			return m, nil
+		case "down", "j":
+			m.selected = clamp(m.selected+1, 0, len(m.repos)-1)
+			m.navigated = true
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m pickerModel) View() tea.View {
+	v := tea.NewView(renderPicker(m.pickerState))
+	v.AltScreen = true
+	return v
+}
+
+// renderPicker is pure: pickerState in, one full frame out — the same
+// contract as renderFrame, so geometry stays testable.
+func renderPicker(s pickerState) string {
+	if s.width < minWidth || s.height < minHeight {
+		return fmt.Sprintf("terminal too small for the monitor (need at least %dx%d)\n", minWidth, minHeight)
+	}
+	var lines []cell
+
+	// The identity block, when there is room for it.
+	if s.height >= 18 {
+		for i, art := range logoArt {
+			line := styled(s.color, sgrCyan, " "+art)
+			switch i {
+			case 1:
+				line = joinCells(line, styled(s.color, sgrBold, "   l o o p y"))
+			case 3:
+				line = joinCells(line, styled(s.color, sgrDim, "   "+logoTagline))
+			}
+			lines = append(lines, line)
+		}
+		lines = append(lines, cell{})
+	}
+
+	lines = append(lines,
+		joinCells(
+			plainCell(" "+abbrevHome(s.start)+" is not a git repository — "),
+			styled(s.color, sgrBold, "pick a project to run loops in:"),
+		),
+		styled(s.color, sgrDim, "   loop state lives inside the repo it works on, under .loopy/"),
+		cell{},
+	)
+
+	switch {
+	case len(s.repos) == 0 && s.scanning:
+		lines = append(lines, styled(s.color, sgrDim, "   scanning "+abbrevHome(s.start)+" for repositories…"))
+	case len(s.repos) == 0:
+		lines = append(lines, emptyScanLines(s)...)
+	default:
+		lines = append(lines, repoListLines(s)...)
+	}
+
+	lines = append(lines, cell{})
+	lines = append(lines, styled(s.color, sgrDim, " ↑↓ choose · enter open · g git init here · q quit"))
+
+	var b strings.Builder
+	for i := 0; i < s.height; i++ {
+		b.WriteString(padCell(lineAt(lines, i), s.width) + "\n")
+	}
+	return b.String()
+}
+
+// repoListLines is the chooser: cursor and selection bold, loop counts dim,
+// the action line naming exactly what enter will do.
+func repoListLines(s pickerState) []cell {
+	var lines []cell
+	footer := 4 // blank, action line, blank, key hints
+	used := len(lines)
+	if s.height >= 18 {
+		used += len(logoArt) + 1
+	}
+	rows := s.height - used - 3 - footer // 3: header, annotation, blank
+	if rows < 1 {
+		rows = 1
+	}
+	start := 0
+	if len(s.repos) > rows && s.selected >= rows {
+		start = s.selected - rows + 1
+	}
+	pathW := 0
+	for _, r := range s.repos {
+		if w := loop.DisplayWidth(abbrevHome(r.Path)); w > pathW {
+			pathW = w
+		}
+	}
+	if pathW > s.width-16 {
+		pathW = s.width - 16
+	}
+	for i := start; i < len(s.repos) && i-start < rows; i++ {
+		r := s.repos[i]
+		marker := styled(s.color, sgrCyan, " ▶ ")
+		path := styled(s.color, sgrBold, loop.PadDisplay(abbrevHome(r.Path), pathW))
+		if i != s.selected {
+			marker = plainCell("   ")
+			path = plainCell(loop.PadDisplay(abbrevHome(r.Path), pathW))
+		}
+		note := ""
+		if r.Loops > 0 {
+			note = fmt.Sprintf("  %d loop(s)", r.Loops)
+		}
+		lines = append(lines, joinCells(marker, path, styled(s.color, sgrDim, note)))
+	}
+	if s.scanning {
+		lines = append(lines, styled(s.color, sgrDim, "   …still scanning"))
+	}
+	lines = append(lines, cell{})
+	action := "enter opens the monitor in " + abbrevHome(s.repos[s.selected].Path)
+	lines = append(lines, styled(s.color, sgrCyan, " "+loop.TruncateDisplay(action, s.width-1)))
+	return lines
+}
+
+// emptyScanLines is the scan-found-nothing state: the old front-door
+// guidance, plus the macOS privacy hint when directories were unreadable.
+func emptyScanLines(s pickerState) []cell {
+	lines := []cell{
+		plainCell(" no git repositories found under " + abbrevHome(s.start) + "."),
+		cell{},
+		styled(s.color, sgrCyan, "   cd into the repo you want loops in, then run: loopy"),
+		styled(s.color, sgrDim, "   starting fresh? press g — git init right here"),
+	}
+	if len(s.denied) > 0 {
+		lines = append(lines, cell{},
+			styled(s.color, sgrYellow, " could not read: "+strings.Join(s.denied, ", ")+" — macOS may be blocking your terminal."),
+			styled(s.color, sgrYellow, " allow it under System Settings → Privacy & Security → Files & Folders, then run loopy again."),
+		)
+	}
+	return lines
+}
+
+// abbrevHome shortens the home directory prefix to ~ for display.
+func abbrevHome(dir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return dir
+	}
+	if dir == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(dir, home+string(os.PathSeparator)); ok {
+		return "~" + string(os.PathSeparator) + rest
+	}
+	return dir
+}

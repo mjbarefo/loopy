@@ -12,12 +12,15 @@ import (
 // `loopy`, dismissed by any key. Branding lives here and in the empty
 // state — never in the working frames.
 
+// logoArt is the pixel lemniscate: two textured loops whose inner walls
+// cross in an X at the center. ██ strokes, ░░ weave — the same two weights
+// everywhere the mark appears (README, splash, empty state, front door).
 var logoArt = []string{
-	"██░░██░░░░██░░██",
-	"██░░░░██████░░░░██",
-	"██░░░░██░░██░░░░██",
-	"██░░░░██████░░░░██",
-	"██░░██░░░░██░░██",
+	"  ████      ████",
+	"██░░░░██  ██░░░░██",
+	"██░░░░░░██░░░░░░██",
+	"██░░░░██  ██░░░░██",
+	"  ████      ████",
 }
 
 const logoTagline = "engineer loops, not prompts"

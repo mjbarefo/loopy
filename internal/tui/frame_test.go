@@ -107,6 +107,48 @@ func TestFrameColorOnKeepsGlyphs(t *testing.T) {
 	}
 }
 
+// TestFrameIdentityAccents pins the visual identity: the ∞ lockup in the
+// header, dim chrome, cyan-bold active tab (no inverse video), and status
+// color in exactly one place per row — the rail glyph and the verdict cell,
+// never the whole line.
+func TestFrameIdentityAccents(t *testing.T) {
+	s := wideState()
+	s.color = true
+	frame := renderFrame(s)
+
+	if !strings.Contains(frame, "\x1b[36m ∞ \x1b[0m\x1b[1mloopy\x1b[0m") {
+		t.Error("header missing the cyan ∞ mark + bold wordmark lockup")
+	}
+	if strings.Contains(frame, "\x1b[7m") {
+		t.Error("inverse video crept back in; the active tab is cyan-bold")
+	}
+	if !strings.Contains(frame, "\x1b[1;36m[overview]\x1b[0m") {
+		t.Error("active tab should be cyan-bold")
+	}
+	if !strings.Contains(frame, "\x1b[2m"+rule(8)) {
+		t.Error("rules should be dim chrome")
+	}
+	// Selected rail row: cyan cursor, colored glyph, bold ID — three cells,
+	// not one painted line.
+	if !strings.Contains(frame, "\x1b[36m▶ \x1b[0m") {
+		t.Error("selection cursor should be its own cyan cell")
+	}
+	if !strings.Contains(frame, "\x1b[1mfix-csv-quoting") {
+		t.Error("selected rail ID should be bold, outside the status color")
+	}
+	// Unselected parked row: red glyph, plain ID.
+	if !strings.Contains(frame, "\x1b[31m✗\x1b[0m flaky-importer") {
+		t.Error("rail status color belongs on the glyph only")
+	}
+	// Timeline rows: the verdict cell carries the color, the metrics do not.
+	if !strings.Contains(frame, "\x1b[32m✓ green") {
+		t.Error("green verdict cell should be green")
+	}
+	if !strings.Contains(frame, "\x1b[0m 1m1s") {
+		t.Error("iteration metrics should sit outside the verdict's color span")
+	}
+}
+
 func TestFrameOverviewAnswersTheQuestions(t *testing.T) {
 	frame := renderFrame(wideState())
 	for _, want := range []string{
@@ -228,24 +270,185 @@ func TestWelcomeFrame(t *testing.T) {
 	}
 }
 
-func TestFrameNewLoopForm(t *testing.T) {
-	s := wideState()
-	s.form = formState{
-		active: true, goal: "fix the importer",
-		stages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}}, stagesDesc: "go test ./...",
-		inferSource: "go.mod", agent: "claude",
-	}
-	frame := renderFrame(s)
-	checkFrameGeometry(t, frame, 120, 36)
-	for _, want := range []string{"start a loop", "fix the importer", "go test ./...", "inferred from go.mod", "enter start", "esc cancel"} {
+func TestRenderPickerScanStates(t *testing.T) {
+	s := pickerState{width: 100, height: 30, start: "/tmp/nowhere", scanning: true}
+	frame := renderPicker(s)
+	for _, want := range []string{
+		"engineer loops, not prompts",
+		"/tmp/nowhere is not a git repository",
+		"scanning /tmp/nowhere for repositories…",
+	} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("form missing %q\n%s", want, frame)
+			t.Errorf("scanning picker missing %q\n%s", want, frame)
 		}
 	}
-	// A blocked form says why and how to proceed instead.
-	s.form = formState{active: true, blocked: `no verifier configured or inferable — start with: loopy run "<goal>" --verify "<cmd>"`}
-	if !strings.Contains(renderFrame(s), "no verifier configured") {
-		t.Error("blocked form must say why")
+
+	// Scan done, nothing found: the guidance replaces the dead end.
+	s.scanning = false
+	frame = renderPicker(s)
+	for _, want := range []string{
+		"no git repositories found under /tmp/nowhere",
+		"cd into the repo you want loops in, then run: loopy",
+		"press g — git init right here",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("empty picker missing %q\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "could not read") {
+		t.Error("no denied dirs, no privacy hint")
+	}
+
+	// Unreadable dirs get the macOS privacy hint.
+	s.denied = []string{"Documents", "Desktop"}
+	frame = renderPicker(s)
+	for _, want := range []string{
+		"could not read: Documents, Desktop",
+		"Privacy & Security",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("denied picker missing %q\n%s", want, frame)
+		}
+	}
+
+	// A scan still running behind found repos says so.
+	s = pickerState{
+		width: 100, height: 30, start: "/tmp/nowhere", scanning: true,
+		repos: []loop.RepoCandidate{{Path: "/tmp/projects/alpha"}},
+	}
+	if frame := renderPicker(s); !strings.Contains(frame, "…still scanning") {
+		t.Errorf("streaming picker should admit the scan is still running\n%s", frame)
+	}
+}
+
+func TestRenderPicker(t *testing.T) {
+	s := pickerState{
+		width: 100, height: 30, start: "/tmp/nowhere",
+		repos: []loop.RepoCandidate{
+			{Path: "/tmp/projects/alpha", Loops: 3},
+			{Path: "/tmp/projects/beta"},
+		},
+		selected: 0,
+	}
+	frame := renderPicker(s)
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	if len(lines) != 30 {
+		t.Fatalf("picker frame has %d lines, want 30", len(lines))
+	}
+	for i, line := range lines {
+		if got := loop.DisplayWidth(line); got != 100 {
+			t.Errorf("picker line %d is %d columns, want 100: %q", i, got, line)
+		}
+	}
+	for _, want := range []string{
+		"engineer loops, not prompts",
+		"/tmp/nowhere is not a git repository",
+		"pick a project to run loops in:",
+		"loop state lives inside the repo it works on, under .loopy/",
+		"▶ /tmp/projects/alpha",
+		"3 loop(s)",
+		"/tmp/projects/beta",
+		"enter opens the monitor in /tmp/projects/alpha",
+		"g git init here",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("picker missing %q\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "\x1b[") {
+		t.Error("color-off picker contains ANSI escapes")
+	}
+
+	// Short terminals drop the logo, never the list.
+	s.height = 12
+	frame = renderPicker(s)
+	if strings.Contains(frame, "██") {
+		t.Error("picker logo must yield to the list on short terminals")
+	}
+	if !strings.Contains(frame, "alpha") {
+		t.Error("short picker lost the repo list")
+	}
+
+	// Selection moves the accent.
+	s.height = 30
+	s.selected = 1
+	if frame := renderPicker(s); !strings.Contains(frame, "▶ /tmp/projects/beta") {
+		t.Error("cursor did not follow the selection")
+	}
+}
+
+func TestFrameNewLoopWizard(t *testing.T) {
+	base := formState{
+		active: true, goal: "fix the importer",
+		agents: []string{"claude", "codex"}, defaultAgent: "claude",
+		picked:        map[int]bool{},
+		prefillStages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}},
+		verifier:      "go test ./...", inferSource: "go.mod",
+		iters: "8", wall: "30m",
+	}
+
+	// Step 1: the goal, with the input and a plain-words hint.
+	s := wideState()
+	s.form = base
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{"start a loop", "step 1 of 5", "fix the importer", "describe what done looks like", "enter continues"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("goal step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Step 2: agents, default labeled, race marking explained.
+	s.form.step = stepAgent
+	s.form.picked = map[int]bool{0: true, 1: true}
+	frame = renderFrame(s)
+	for _, want := range []string{"step 2 of 5", "claude", "(default)", "space marks more than one to race", "enter continues with claude + codex"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("agent step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Step 3: the verifier, editable, with its provenance.
+	s.form = base
+	s.form.step = stepVerifier
+	frame = renderFrame(s)
+	for _, want := range []string{"go test ./...", "inferred from go.mod", "exit 0 means the goal is met"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("verifier step missing %q\n%s", want, frame)
+		}
+	}
+	s.form.edited = true
+	if !strings.Contains(renderFrame(s), "edited — used as a single stage") {
+		t.Error("an edited verifier must say it will not be stored")
+	}
+
+	// Step 4: budget, hard caps named.
+	s.form = base
+	s.form.step = stepBudget
+	frame = renderFrame(s)
+	for _, want := range []string{"iterations  8", "wall clock  30m", "hard caps"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("budget step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Step 5: the summary and the start action.
+	s.form.step = stepConfirm
+	frame = renderFrame(s)
+	for _, want := range []string{"goal      fix the importer", "agent     claude", "verifier  go test ./...", "8 iterations · 30m", "enter starts the loop in its own worktree"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("confirm step missing %q\n%s", want, frame)
+		}
+	}
+	s.form.picked = map[int]bool{0: true, 1: true}
+	if !strings.Contains(renderFrame(s), "enter races 2 agents") {
+		t.Error("a multi-agent confirm must say it races")
+	}
+
+	// No agents registered, none detected: the step says how to proceed.
+	s.form = formState{active: true, step: stepAgent, picked: map[int]bool{}}
+	if !strings.Contains(renderFrame(s), "no agent CLIs registered or found") {
+		t.Error("the agent step must say why it is stuck and what to do")
 	}
 }
 
