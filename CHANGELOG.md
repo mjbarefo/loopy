@@ -30,6 +30,14 @@ Homebrew tap.
   that carries the full loop view (`--race` interleaves all loops on one
   stream and ends with a `verdict` event). Schema and a worked example in
   `docs/orchestration.md`.
+- `loopy agent check [name]`: smoke-run a registered agent (or all of them)
+  against a trivial prompt in a throwaway directory — trust prompts, dead
+  auth, and missing CLIs surface in seconds, with the agent's own words and
+  the re-registration hint on failure; exits 1 so setup scripts can gate.
+  `agent add` warns when the command's binary is missing from PATH, and
+  `loopy doctor` checks every registered agent the same way. The suggested
+  gemini command now includes `--skip-trust` (required for headless work in
+  loop worktrees; proven by a real loop).
 - Engine: a nonzero agent exit that leaves the worktree untouched parks as
   `agent blocked (exit N): <the agent's own last words>` instead of generic
   "stuck" — the park reason now names the environment problem (trust prompt,

@@ -3,12 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 )
 
 const agentHelp = `usage:
   loopy agent add <name> --cmd <template> [--default]
+  loopy agent check [name]   smoke-run agents with a trivial prompt (one
+                             tiny model call each); no name checks them all
   loopy agent list
   loopy agent remove <name>
 
@@ -19,9 +22,10 @@ Variables (always shell-quoted on expansion):
   {worktree}     the loop's isolated worktree
   {loop_id} {goal} {iteration}
 
-suggested commands (headless modes; verify against your installed versions):
+suggested commands (headless modes proven by real loops; see docs/agents.md):
   loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits"
-  loopy agent add codex  --cmd "codex exec {prompt}"
+  loopy agent add codex  --cmd "codex exec --full-auto {prompt}"
+  loopy agent add gemini --cmd "gemini -p {prompt} --yolo --skip-trust"
   loopy agent add shell  --cmd "sh my-fix-script.sh {prompt_file} {worktree}"`
 
 func handleAgent(cwd string, args []string) error {
@@ -38,6 +42,12 @@ func handleAgent(cwd string, args []string) error {
 	switch args[0] {
 	case "add":
 		return agentAdd(root, args[1:])
+	case "check":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		return agentCheck(root, name)
 	case "list":
 		return agentList(root)
 	case "remove":
@@ -93,6 +103,50 @@ func agentAdd(root string, args []string) error {
 		suffix = " (default)"
 	}
 	fmt.Printf("registered agent %s%s\n", normalized, suffix)
+	if bin := loop.MissingAgentBinary(*cmd); bin != "" {
+		fmt.Printf("warning: %q is not on PATH — loops with this agent will park \"agent blocked\"\n", bin)
+	}
+	fmt.Printf("smoke-test it (one tiny model call): loopy agent check %s\n", normalized)
+	return nil
+}
+
+// agentCheck smoke-runs one agent, or all of them when name is empty. A
+// failing agent makes the command exit 1, so setup scripts can gate on it.
+func agentCheck(root, name string) error {
+	var names []string
+	if name != "" {
+		names = []string{name}
+	} else {
+		reg, err := loop.LoadAgents(root)
+		if err != nil {
+			return err
+		}
+		names = loop.AgentNames(reg)
+		if len(names) == 0 {
+			return fmt.Errorf("no agents registered (see `loopy agent help`)")
+		}
+	}
+	failed := 0
+	for _, n := range names {
+		res, err := loop.CheckAgent(root, n)
+		if err != nil {
+			return err
+		}
+		took := (time.Duration(res.WallMS) * time.Millisecond).Round(100 * time.Millisecond)
+		if res.OK {
+			fmt.Printf("✓ %s ok (%s)\n", res.Name, took)
+			continue
+		}
+		failed++
+		fmt.Printf("✗ %s failed (exit %d, %s)\n", res.Name, res.Exit, took)
+		if res.Words != "" {
+			fmt.Printf("    %s\n", res.Words)
+		}
+		fmt.Printf("    fix the command and re-register: loopy agent add %s --cmd '…'\n", res.Name)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d agent(s) failed the check", failed, len(names))
+	}
 	return nil
 }
 
