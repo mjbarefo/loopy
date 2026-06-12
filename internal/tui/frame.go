@@ -690,7 +690,7 @@ func helpLines(s frameState) []cell {
 // they are never cut mid-word.
 var listKeys = []string{"↑↓ loop", "n new", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
 var detailKeys = []string{"↑↓ scroll", "g top", "G follow", "esc back", "tab view", "? help", "q quit"}
-var formKeys = []string{"type the goal", "enter start", "esc cancel"}
+var formKeys = []string{"enter next step", "esc back", "ctrl+c quit"}
 
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	switch {

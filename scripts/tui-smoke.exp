@@ -138,6 +138,53 @@ expect {
 send "q"
 expect eof
 
+# --- the new-loop wizard, end to end ------------------------------------------
+note "wizard: goal → agent → verifier → budget → start"
+set stty_init "rows 30 columns 100"
+spawn $bin watch
+expect {
+    -ex "park-immediately" {}
+    timeout { fail "wizard: monitor never appeared" }
+}
+send "n"
+expect {
+    -ex "step 1 of 5" {}
+    timeout { fail "wizard: n never opened step 1" }
+}
+send "make a marker\r"
+expect {
+    -ex "who does the work" {}
+    timeout { fail "wizard: goal never advanced to the agent step" }
+}
+send "\r"
+expect {
+    -ex "exit 0 means the goal is met" {}
+    timeout { fail "wizard: agent never advanced to the verifier step" }
+}
+send "true\r"
+expect {
+    -ex "hard caps" {}
+    timeout { fail "wizard: verifier never advanced to the budget step" }
+}
+# Match confirm by its body: the step header only changes one digit (which
+# defeats substring matching against an incremental redraw) and the tail of
+# the action line truncates behind the rail.
+send "\r"
+expect {
+    -ex "starts the loop in its own worktree" {}
+    timeout { fail "wizard: budget never advanced to confirm" }
+}
+send "\r"
+# The loop is created and handed to a detached engine; it appears in the rail.
+expect {
+    -ex "make-a-marker" {}
+    timeout { fail "wizard: started loop never appeared in the monitor" }
+}
+send "q"
+expect eof
+# Let the detached engine finish before the workbench disappears.
+exec sh -c "sleep 3"
+
 # --- bare launch in an uninitialized repo: onboarding ------------------------
 note "bare launch, uninitialized repo"
 set fresh [exec mktemp -d /tmp/loopy-tui-smoke-fresh.XXXXXX]

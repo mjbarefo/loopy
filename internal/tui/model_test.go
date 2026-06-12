@@ -63,13 +63,75 @@ func TestWelcomeDismissal(t *testing.T) {
 }
 
 func TestFormGuardNeedsSetup(t *testing.T) {
-	m := model{initialized: false, agentsRegistered: false}
+	m := model{initialized: false}
 	res, _ := m.handleKey(press('n', "n"))
 	m = res.(model)
 	if m.form.active {
-		t.Fatal("n must not open the form before init + an agent")
+		t.Fatal("n must not open the wizard before init")
 	}
 	if m.flash == "" {
 		t.Fatal("the guard should say what to do instead")
+	}
+}
+
+func TestWizardWalksTheSteps(t *testing.T) {
+	m := model{form: formState{
+		active: true, goal: "fix it",
+		agents: []string{"claude", "codex"}, defaultAgent: "claude",
+		picked:   map[int]bool{},
+		verifier: "go test ./...",
+		iters:    "8", wall: "30m",
+	}}
+	enter := press(tea.KeyEnter, "")
+
+	// goal → agent → verifier → budget → confirm.
+	for want := stepAgent; want <= stepConfirm; want++ {
+		res, _ := m.handleFormKey(enter)
+		m = res.(model)
+		if m.form.step != want {
+			t.Fatalf("after enter, step = %d, want %d", m.form.step, want)
+		}
+	}
+
+	// esc walks back without losing anything.
+	res, _ := m.handleFormKey(press(tea.KeyEscape, ""))
+	m = res.(model)
+	if m.form.step != stepBudget || m.form.goal != "fix it" {
+		t.Fatalf("esc should step back keeping state, step=%d goal=%q", m.form.step, m.form.goal)
+	}
+
+	// Bad budget input does not advance.
+	m.form.iters = "lots"
+	res, _ = m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.step != stepBudget {
+		t.Fatal("a non-numeric budget must not advance")
+	}
+	if m.flash == "" {
+		t.Fatal("the wizard should say what is wrong with the budget")
+	}
+
+	// Editing the verifier marks it as such.
+	m.form.step = stepVerifier
+	res, _ = m.handleFormKey(press('x', "x"))
+	m = res.(model)
+	if !m.form.edited {
+		t.Fatal("typing on the verifier step must set edited")
+	}
+
+	// Space on the agent step marks for racing.
+	m.form.step = stepAgent
+	res, _ = m.handleFormKey(press(tea.KeySpace, " "))
+	m = res.(model)
+	if !m.form.picked[0] {
+		t.Fatal("space should mark the agent under the cursor")
+	}
+
+	// An empty goal refuses to advance.
+	m.form = formState{active: true, picked: map[int]bool{}}
+	res, _ = m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.step != stepGoal {
+		t.Fatal("an empty goal must not advance")
 	}
 }

@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -278,10 +280,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "n":
-		if !m.initialized || !m.agentsRegistered {
-			m.say("set up first — initialize the repo and register an agent")
+		if !m.initialized {
+			m.say("initialize the repo first — press i")
 			return m, nil
 		}
+		// No agent yet is fine: the wizard's agent step registers one.
 		m.form = openForm(m.root)
 		return m, nil
 	case "i":
@@ -473,44 +476,153 @@ func (m model) View() tea.View {
 	return v
 }
 
-// handleFormKey edits the new-loop form. Typing uses the key's text (so
-// letters that are commands elsewhere, like q and p, spell the goal).
+// handleFormKey drives the new-loop wizard. Typing uses the key's text (so
+// letters that are commands elsewhere, like q and p, spell the goal); enter
+// advances a step, esc walks back, and esc on the first step cancels.
 func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+	switch key {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.form = formState{}
+		if m.form.step == stepGoal {
+			m.form = formState{}
+		} else {
+			m.form.step--
+		}
 		return m, nil
 	case "enter":
-		id, err := startLoop(m.root, m.form)
+		return m.wizardAdvance()
+	}
+
+	switch m.form.step {
+	case stepGoal:
+		m.form.goal = editText(m.form.goal, key, msg.Text, 300)
+	case stepAgent:
+		n := len(m.form.agents)
+		if n == 0 {
+			n = len(m.form.detected)
+		}
+		switch key {
+		case "up", "k":
+			m.form.cursor = clamp(m.form.cursor-1, 0, max(n-1, 0))
+		case "down", "j":
+			m.form.cursor = clamp(m.form.cursor+1, 0, max(n-1, 0))
+		case "space":
+			if len(m.form.agents) > 0 {
+				m.form.picked[m.form.cursor] = !m.form.picked[m.form.cursor]
+			}
+		}
+	case stepVerifier:
+		if next := editText(m.form.verifier, key, msg.Text, 500); next != m.form.verifier {
+			m.form.verifier = next
+			m.form.edited = true
+		}
+	case stepBudget:
+		switch key {
+		case "up", "down", "tab", "k", "j":
+			m.form.budgetField = 1 - m.form.budgetField
+		default:
+			if m.form.budgetField == 0 {
+				m.form.iters = editText(m.form.iters, key, msg.Text, 6)
+			} else {
+				m.form.wall = editText(m.form.wall, key, msg.Text, 12)
+			}
+		}
+	}
+	return m, nil
+}
+
+// wizardAdvance validates the current step and moves forward; the last step
+// starts the loop(s).
+func (m model) wizardAdvance() (tea.Model, tea.Cmd) {
+	f := &m.form
+	switch f.step {
+	case stepGoal:
+		if strings.TrimSpace(f.goal) == "" {
+			m.say("a goal is required — describe what done looks like")
+			return m, nil
+		}
+	case stepAgent:
+		switch {
+		case len(f.agents) > 0:
+			// The cursor is the choice when nothing is marked.
+		case f.cursor < len(f.detected):
+			d := f.detected[f.cursor]
+			if err := loop.AddAgent(m.root, d.Name, d.Cmd, true); err != nil {
+				m.say("could not register %s: %v", d.Name, err)
+				return m, nil
+			}
+			f.agents = []string{d.Name}
+			f.defaultAgent = d.Name
+			f.cursor = 0
+			m.agentsRegistered = true
+			m.say("registered agent %s (default)", d.Name)
+		default:
+			m.say("no agent to continue with — register one: loopy agent add …")
+			return m, nil
+		}
+	case stepVerifier:
+		if strings.TrimSpace(f.verifier) == "" {
+			m.say("no verifier, no loop — type the command that proves the goal")
+			return m, nil
+		}
+	case stepBudget:
+		if _, err := strconv.Atoi(strings.TrimSpace(f.iters)); err != nil {
+			m.say("iterations must be a number")
+			return m, nil
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(f.wall)); err != nil {
+			m.say("wall clock must be a duration like 30m or 2h")
+			return m, nil
+		}
+	case stepConfirm:
+		ids, err := startLoops(m.root, m.form)
 		if err != nil {
 			m.say("%v", err)
 			return m, nil
 		}
 		m.form = formState{}
-		m.selectedID = id
+		m.selectedID = ids[0]
 		m.tab = tabOverview
-		m.say("loop %s started", id)
+		if len(ids) > 1 {
+			m.say("racing %d loops — when all park: loopy judge %s", len(ids), strings.Join(ids, " "))
+		} else {
+			m.say("loop %s started", ids[0])
+		}
 		m.reload()
 		return m, nil
-	case "backspace":
-		r := []rune(m.form.goal)
-		if len(r) > 0 {
-			m.form.goal = string(r[:len(r)-1])
-		}
-		return m, nil
-	case "ctrl+u":
-		m.form.goal = ""
-		return m, nil
-	case "space":
-		m.form.goal += " "
-		return m, nil
 	}
-	if t := msg.Text; t != "" && len(m.form.goal) < 300 {
-		m.form.goal += t
-	}
+	f.step++
 	return m, nil
+}
+
+// editText is the wizard's shared one-line text editing: printable text
+// appends, backspace deletes a rune, ctrl+u clears.
+func editText(value, key, text string, limit int) string {
+	switch key {
+	case "backspace":
+		r := []rune(value)
+		if len(r) > 0 {
+			return string(r[:len(r)-1])
+		}
+		return value
+	case "ctrl+u":
+		return ""
+	case "space":
+		text = " "
+	}
+	if text != "" && len(value) < limit {
+		return value + text
+	}
+	return value
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func done(v loop.LoopView) bool {

@@ -377,24 +377,78 @@ func TestRenderPicker(t *testing.T) {
 	}
 }
 
-func TestFrameNewLoopForm(t *testing.T) {
-	s := wideState()
-	s.form = formState{
+func TestFrameNewLoopWizard(t *testing.T) {
+	base := formState{
 		active: true, goal: "fix the importer",
-		stages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}}, stagesDesc: "go test ./...",
-		inferSource: "go.mod", agent: "claude",
+		agents: []string{"claude", "codex"}, defaultAgent: "claude",
+		picked:        map[int]bool{},
+		prefillStages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}},
+		verifier:      "go test ./...", inferSource: "go.mod",
+		iters: "8", wall: "30m",
 	}
+
+	// Step 1: the goal, with the input and a plain-words hint.
+	s := wideState()
+	s.form = base
 	frame := renderFrame(s)
 	checkFrameGeometry(t, frame, 120, 36)
-	for _, want := range []string{"start a loop", "fix the importer", "go test ./...", "inferred from go.mod", "enter start", "esc cancel"} {
+	for _, want := range []string{"start a loop", "step 1 of 5", "fix the importer", "describe what done looks like", "enter continues"} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("form missing %q\n%s", want, frame)
+			t.Errorf("goal step missing %q\n%s", want, frame)
 		}
 	}
-	// A blocked form says why and how to proceed instead.
-	s.form = formState{active: true, blocked: `no verifier configured or inferable — start with: loopy run "<goal>" --verify "<cmd>"`}
-	if !strings.Contains(renderFrame(s), "no verifier configured") {
-		t.Error("blocked form must say why")
+
+	// Step 2: agents, default labeled, race marking explained.
+	s.form.step = stepAgent
+	s.form.picked = map[int]bool{0: true, 1: true}
+	frame = renderFrame(s)
+	for _, want := range []string{"step 2 of 5", "claude", "(default)", "space marks more than one to race", "enter continues with claude + codex"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("agent step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Step 3: the verifier, editable, with its provenance.
+	s.form = base
+	s.form.step = stepVerifier
+	frame = renderFrame(s)
+	for _, want := range []string{"go test ./...", "inferred from go.mod", "exit 0 means the goal is met"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("verifier step missing %q\n%s", want, frame)
+		}
+	}
+	s.form.edited = true
+	if !strings.Contains(renderFrame(s), "edited — used as a single stage") {
+		t.Error("an edited verifier must say it will not be stored")
+	}
+
+	// Step 4: budget, hard caps named.
+	s.form = base
+	s.form.step = stepBudget
+	frame = renderFrame(s)
+	for _, want := range []string{"iterations  8", "wall clock  30m", "hard caps"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("budget step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Step 5: the summary and the start action.
+	s.form.step = stepConfirm
+	frame = renderFrame(s)
+	for _, want := range []string{"goal      fix the importer", "agent     claude", "verifier  go test ./...", "8 iterations · 30m", "enter starts the loop in its own worktree"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("confirm step missing %q\n%s", want, frame)
+		}
+	}
+	s.form.picked = map[int]bool{0: true, 1: true}
+	if !strings.Contains(renderFrame(s), "enter races 2 agents") {
+		t.Error("a multi-agent confirm must say it races")
+	}
+
+	// No agents registered, none detected: the step says how to proceed.
+	s.form = formState{active: true, step: stepAgent, picked: map[int]bool{}}
+	if !strings.Contains(renderFrame(s), "no agent CLIs registered or found") {
+		t.Error("the agent step must say why it is stuck and what to do")
 	}
 }
 
