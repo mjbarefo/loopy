@@ -30,6 +30,12 @@ Homebrew tap.
   that carries the full loop view (`--race` interleaves all loops on one
   stream and ends with a `verdict` event). Schema and a worked example in
   `docs/orchestration.md`.
+- `loopy run "<goal>" --verify auto`: the agent proposes the goal-testing
+  verifier. The registered agent runs once in a throwaway worktree, its
+  proposed command is trial-run there (an already-passing proposal is
+  flagged), and you confirm before the loop starts — goal-specific, never
+  stored as the project default, refused without a TTY. Baseline-green
+  parks now hint at it.
 - `loopy agent check [name]`: smoke-run a registered agent (or all of them)
   against a trivial prompt in a throwaway directory — trust prompts, dead
   auth, and missing CLIs surface in seconds, with the agent's own words and

@@ -18,6 +18,9 @@ const runHelp = `usage:
 
 flags:
   --verify <cmd>          verifier stage; repeatable, runs in order (fast→slow)
+  --verify auto           the agent proposes a goal-testing command in a
+                          throwaway worktree (one model call); it is trial-run
+                          and shown to you before anything starts
   --agent <name>          registered agent to use (default: registry default)
   --reviewer <name>       different registered agent that critiques the green
                           diff before parking; the critique is evidence
@@ -35,7 +38,9 @@ flags:
 
 Without --verify, loopy uses the project's stored default verifier, or infers
 one from the repo (make check, go test, npm test, ...) and asks once before
-storing it. A loop cannot be created without a verifier.
+storing it. A loop cannot be created without a verifier. For goals the
+project gate does not test (file moves, docs), --verify auto leans on the
+agent instead of asking you to write shell.
 
 exit codes: 0 loop parked green (race: the judge named a winner) ·
             1 parked red or failed · 2 usage error`
@@ -92,7 +97,14 @@ func handleRun(cwd string, args []string) error {
 
 	// JSON mode is for scripts: never mix an interactive verifier
 	// confirmation into the event stream.
-	stages, err := resolveVerifier(root, verify, !*jsonOut)
+	var stages []loop.Stage
+	if len(verify) == 1 && verify[0] == "auto" {
+		stages, err = synthesizeVerifier(root, *agent, *race, goal, !*jsonOut)
+	} else if len(verify) > 1 && containsAuto(verify) {
+		return usagef("--verify auto stands alone; the agent chains the project gate itself")
+	} else {
+		stages, err = resolveVerifier(root, verify, !*jsonOut)
+	}
 	if err != nil {
 		return err
 	}
@@ -277,6 +289,9 @@ func progressEvents(root string) loop.Events {
 					note = " (" + l.ParkedReason + ")"
 				}
 				fmt.Printf("%s loop %s is green%s — parked for review\n", colorize(green, "✓"), l.ID, note)
+				if strings.Contains(l.ParkedReason, "baseline") {
+					fmt.Println("hint: if the verifier may not test the goal, `--verify auto` asks the agent to propose one that does")
+				}
 				if view, err := loop.BuildLoopView(root, l); err == nil && view.NextCommand != "" {
 					fmt.Printf("next: %s\n", view.NextCommand)
 				}
@@ -286,6 +301,54 @@ func progressEvents(root string) loop.Events {
 			}
 		},
 	}
+}
+
+func containsAuto(cmds []string) bool {
+	for _, c := range cmds {
+		if c == "auto" {
+			return true
+		}
+	}
+	return false
+}
+
+// synthesizeVerifier drives `--verify auto`: the registered agent proposes a
+// goal-testing command in a throwaway worktree, the proposal is trial-run
+// there, and the human confirms before it becomes the loop's verifier.
+// Fails closed without a TTY — a synthesized command is never used
+// unconfirmed, same rule as inference.
+func synthesizeVerifier(root, agentName, race, goal string, interactive bool) ([]loop.Stage, error) {
+	if !interactive || !isTTY(os.Stdin) {
+		return nil, fmt.Errorf("--verify auto needs an interactive confirmation; pass --verify <cmd> in scripts")
+	}
+	if agentName == "" && race != "" {
+		agentName = splitAgents(race)[0]
+	}
+	name, _, err := loop.ResolveAgent(root, agentName)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("asking %s to propose a verifier for this goal (one model call)…\n", name)
+	res, err := loop.SynthesizeVerifier(root, name, goal)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("proposed by %s in %s:\n  %s\n", res.Agent, (time.Duration(res.AgentMS) * time.Millisecond).Round(100*time.Millisecond), res.Cmd)
+	if res.AlreadyGreen {
+		fmt.Println("warning: the proposal already passes — either the goal is done, or the command does not test it")
+	} else {
+		fmt.Println("trial run: red right now, as a verifier for unfinished work should be")
+	}
+	fmt.Print("use it as this loop's verifier? [Y/n] ")
+	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	if readErr != nil && line == "" {
+		return nil, fmt.Errorf("no confirmation; pass --verify <cmd>")
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	if answer != "" && answer != "y" && answer != "yes" {
+		return nil, fmt.Errorf("declined; pass --verify <cmd> to define the verifier explicitly")
+	}
+	return []loop.Stage{{Name: "goal", Cmd: res.Cmd}}, nil
 }
 
 // resolveVerifier applies the precedence: --verify flags > stored project
