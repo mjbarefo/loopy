@@ -36,13 +36,16 @@ Today that practice is held together with shell scripts, cron jobs, and
 markdown files. loopy makes the loop a first-class, inspectable, resumable
 object.
 
-What stays human, permanently:
+What stays human:
 
 - **Designing the loop.** Choosing the goal, the verifier, and the budget *is*
   the engineering. A loop with a weak verifier converges on garbage, quickly.
-- **Reviewing the result.** loopy never merges, never commits to your
-  branches, never pushes. A green verifier earns a parked diff and a review.
-  Humans ship.
+- **Accountability for what ships.** loopy never merges, never commits to your
+  branches, never pushes — that is the tool's permanent invariant. A green
+  verifier earns a parked diff and a review. Who reviews it is yours to place:
+  you, a reviewer agent, or an outer loop gating on `loopy run`'s exit code —
+  loopy is built to be a rung in a taller stack, and the evidence trail is the
+  way back down when the stack misbehaves.
 
 ## See it converge (no API keys)
 
