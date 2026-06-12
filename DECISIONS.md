@@ -617,6 +617,22 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   field-switcher is a different step), and a proposal you must read sits in
   an input you can edit — no separate accept screen.
 
+- **2026-06-12 — Diff and verifier tabs answer first, evidence below.** The
+  owner's ask: the artifact tabs must read for a lay person, not just for
+  someone who parses unified diffs. The calls: each tab opens with a header
+  in plain words — the diff's "N files changed · +A -D" plus a per-file
+  list, the verifier's per-stage ✓/✗ scoreboard plus a verdict sentence
+  ("green: the goal is met" / "red: stage X failed — the log below shows
+  why") — then the raw artifact with per-line styling (diff +/- in
+  green/red, `=== stage` markers as dim dividers; on a red run the passing
+  stages' output dims so the failure reads bright). Because the answer
+  leads, **these two tabs open scrolled to the top**, not tail-following —
+  live and overview keep the tail. A **truncated diff gets no stat header**:
+  counting only the visible tail would lie, and the `!` banner already says
+  the load is partial. The diff parser lives in `internal/loop/diffstat.go`
+  (pure, stdlib), and `IterationView` now carries its per-stage results —
+  the scoreboard renders from the view-model, never by parsing the log.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

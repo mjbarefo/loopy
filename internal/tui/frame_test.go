@@ -189,6 +189,121 @@ func TestFrameParkedReasonIsTheActivityLine(t *testing.T) {
 	}
 }
 
+// TestFrameDiffTabAnswersFirst: the diff tab opens with what changed in plain
+// words — a file count, a per-file list — then the patch, styled per line.
+func TestFrameDiffTabAnswersFirst(t *testing.T) {
+	s := wideState()
+	s.tab = tabDiff
+	s.art = artifact{label: "iter 2 · diff.patch", iter: 2, lines: []string{
+		"diff --git a/docs/fable/README.md b/docs/fable/README.md",
+		"new file mode 100644",
+		"index 0000000..52ad8d6",
+		"--- /dev/null",
+		"+++ b/docs/fable/README.md",
+		"@@ -0,0 +1,3 @@",
+		"+# fable",
+		"+",
+		"+a readme written by a loop",
+	}}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{
+		"1 file changed · +3",
+		"+ docs/fable/README.md",
+		"new file · +3",
+		"iter 2 · diff.patch",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("diff tab missing %q\n%s", want, frame)
+		}
+	}
+
+	s.color = true
+	frame = renderFrame(s)
+	for _, want := range []string{
+		"\x1b[1m 1 file changed · +3\x1b[0m", // the answer leads, bold
+		"\x1b[1m diff --git",                 // file headers bold
+		"\x1b[2;36m @@ -0,0 +1,3 @@\x1b[0m",  // hunk markers dim cyan
+		"\x1b[32m +# fable\x1b[0m",           // adds green
+		"\x1b[1m --- /dev/null\x1b[0m",       // old-side header bold, not red
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("styled diff missing %q\n%s", want, frame)
+		}
+	}
+}
+
+// TestFrameVerifierTabScoreboard: the verifier tab opens with a per-stage
+// scoreboard and a plain-words verdict; in the log, markers are dim dividers
+// and on a red run the passing stages' output dims so the failure reads.
+func TestFrameVerifierTabScoreboard(t *testing.T) {
+	s := wideState()
+	s.tab = tabVerifier
+	s.loops[0].Verifier = append(s.loops[0].Verifier, loop.Stage{Name: "build", Cmd: "go build ./..."})
+	s.loops[0].Iterations[1].Stages = []loop.StageResult{
+		{Name: "vet", Cmd: "go vet ./...", ExitCode: 0, DurationMS: 300},
+		{Name: "test", Cmd: "go test ./...", ExitCode: 1, DurationMS: 900},
+	}
+	s.art = artifact{label: "iter 1 · verifier.log", iter: 1, lines: []string{
+		"=== stage vet: go vet ./...",
+		"vet chatter",
+		"=== stage vet: exit 0 (300ms)",
+		"=== stage test: go test ./...",
+		"--- FAIL: TestQuotedNewlines (0.00s)",
+		"=== stage test: exit 1 (900ms)",
+	}}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{
+		"✓ vet",
+		"✗ test",
+		"(300ms)",
+		"· build  go build ./...  did not run",
+		"red: stage test failed — the log below shows why",
+		"--- FAIL: TestQuotedNewlines",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("verifier tab missing %q\n%s", want, frame)
+		}
+	}
+
+	s.color = true
+	frame = renderFrame(s)
+	if !strings.Contains(frame, "\x1b[2m === stage vet: go vet ./...\x1b[0m") {
+		t.Error("stage markers should be dim dividers")
+	}
+	if !strings.Contains(frame, "\x1b[2m vet chatter\x1b[0m") {
+		t.Error("a passing stage's output should dim on a red run")
+	}
+	if strings.Contains(frame, "\x1b[2m --- FAIL") {
+		t.Error("the failing stage's output must stay bright")
+	}
+}
+
+// TestFrameVerifierTabGreen: a green run says so in plain words and keeps the
+// whole log bright — only the markers recede.
+func TestFrameVerifierTabGreen(t *testing.T) {
+	s := wideState()
+	s.tab = tabVerifier
+	s.loops[0].Iterations[2].Stages = []loop.StageResult{
+		{Name: "vet", Cmd: "go vet ./...", ExitCode: 0, DurationMS: 250},
+		{Name: "test", Cmd: "go test ./...", ExitCode: 0, DurationMS: 1100},
+	}
+	s.art = artifact{label: "iter 2 · verifier.log", iter: 2, lines: []string{
+		"=== stage test: go test ./...",
+		"ok  	github.com/example/pkg	0.4s",
+	}}
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "green: the goal is met") {
+		t.Errorf("green verifier tab needs its verdict\n%s", frame)
+	}
+	s.color = true
+	frame = renderFrame(s)
+	if strings.Contains(frame, "\x1b[2m ok  ") {
+		t.Error("a green run's output should not dim")
+	}
+}
+
 func TestFrameTruncationBanner(t *testing.T) {
 	s := wideState()
 	s.tab = tabDiff

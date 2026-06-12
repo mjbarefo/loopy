@@ -23,6 +23,9 @@ type IterationView struct {
 	// iteration got — the convergence signal for multi-stage verifiers.
 	StagesPassed int `json:"stages_passed"`
 	StagesTotal  int `json:"stages_total"`
+	// Stages carries the per-stage results for this iteration, in run order;
+	// stages after the first failure are absent (the verifier short-circuits).
+	Stages []StageResult `json:"stages,omitempty"`
 }
 
 // LoopView is the shared view-model: everything the plain renderer (and the
@@ -118,6 +121,7 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 			FilesChanged: len(it.ChangedFiles),
 			StagesPassed: passed,
 			StagesTotal:  len(l.Verifier),
+			Stages:       it.Stages,
 		})
 	}
 	if len(iterations) > 0 {
