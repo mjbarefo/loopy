@@ -67,7 +67,7 @@ if {![has_color $expect_out(buffer)]} { fail "wide: expected color in a color-ca
 
 send "\t"
 expect {
-    -ex {[live]} {}
+    -ex "▸ live" {}
     timeout { fail "wide: tab did not switch to the live view" }
 }
 send "?"
@@ -132,7 +132,7 @@ expect {
 # here); prove the form closes cleanly and the monitor comes back.
 send "\x1b"
 expect {
-    -ex "↑↓ loop" {}
+    -ex "n new · enter open" {}
     timeout { fail "bare: esc did not close the form" }
 }
 send "q"

@@ -206,7 +206,7 @@ func RenderReview(v LoopView, review *Review, transcript string, transcriptIter 
 			b.WriteString("\n")
 		}
 	} else {
-		b.WriteString("\ndiff: none — the verifier was already green at baseline\n")
+		b.WriteString("\ndiff: none — already green at baseline: nothing to do, or the verifier may not test the goal\n")
 	}
 
 	switch {

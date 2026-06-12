@@ -12,24 +12,28 @@ import (
 // humans see. Color is applied after plain-text layout and is never the only
 // signal — every verdict keeps its word or glyph.
 //
-// Layout (no box chrome; dim rules and one dim rail separator):
+// Layout (no box chrome; dim rules, one dim rail separator, and at roomy
+// sizes a blank row inside each rule plus a two-column gutter — margins are
+// structure, not decoration):
 //
-//	 ∞ loopy   1 running · 1 paused · 2 to review          ? help · q quit
+//	 ∞ loopy   1 running · 1 paused · 2 to review                 ? help
 //	─────────────────────────────────────────────────────────────────────
-//	▶ ● fix-csv-quoting      2/8 │ ● fix-csv-quoting — running
-//	  ✓ green-deploy-docs    3/6 │ goal   make the importer handle …
-//	  ✗ flaky-importer       8/8 │ agent  claude · iter 2/8 · wall 4m10s …
-//	                             │ now: agent running · iter 3 · 1m32s
-//	                             │
-//	                             │ [overview]  live   diff   verifier
-//	                             │  iter  result        agent   verify  diff
-//	                             │  …
+//
+//	  ▶ ● fix-csv-quoting      2/8 │  ● fix-csv-quoting — running
+//	    ◌ paused-import        1/8 │  goal   make the importer handle …
+//	                               │  agent  claude · iter 2/8 · wall …
+//	    ✓ green-deploy-docs    3/6 │  ● now: agent running · iter 3 · 1m
+//	    ✗ flaky-importer       8/8 │
+//	                               │  ▸ overview   live   diff   verifier
+//	                               │   iter  result      agent  verify …
+//
 //	─────────────────────────────────────────────────────────────────────
-//	 ↑↓ loop · enter drill · p pause · a abort · ? help    next: loopy …
+//	 n new · enter open · ? keys                       next: loopy …
 const (
 	minWidth      = 40
 	minHeight     = 8
 	collapseWidth = 80 // below this the loop rail collapses away
+	marginHeight  = 20 // below this (or collapseWidth) the margins collapse
 	minRailWidth  = 22
 	maxRailWidth  = 34
 )
@@ -126,18 +130,53 @@ func padCell(c cell, width int) string {
 
 func rule(n int) string { return strings.Repeat("─", n) }
 
+// roomy reports whether the frame has the room for margins: the blank row
+// inside each rule and the two-column gutter. Below it the layout collapses
+// to the dense form — the 40x8 floor and the degradation ladder are
+// untouched.
+func (s frameState) roomy() bool {
+	return s.width >= collapseWidth && s.height >= marginHeight
+}
+
+// contentRows is the rows between the rules, minus the margin rows.
+func (s frameState) contentRows() int {
+	if s.roomy() {
+		return s.height - 6
+	}
+	return s.height - 4
+}
+
+// railArea is the rail width (0 when collapsed or empty) and the detail
+// width that remains beside it.
+func (s frameState) railArea() (railW, detailW int) {
+	detailW = s.width - 1
+	if s.width >= collapseWidth && (len(s.loops) > 0 || len(s.broken) > 0) {
+		railW = railWidth(s.loops, s.broken)
+		detailW = s.width - railW - 2 // separator column + leading space
+	}
+	if s.roomy() {
+		if railW > 0 {
+			detailW -= 2 // the gutter columns ahead of the rail
+		} else {
+			detailW -= 1 // the two-column gutter replaces the single leading space
+		}
+	}
+	return railW, detailW
+}
+
 func renderFrame(s frameState) string {
 	if s.width < minWidth || s.height < minHeight {
 		return fmt.Sprintf("terminal too small for the monitor (need at least %dx%d)\n", minWidth, minHeight)
 	}
-	wide := s.width >= collapseWidth
-	railW := 0
-	detailW := s.width - 1
-	if wide && (len(s.loops) > 0 || len(s.broken) > 0) {
-		railW = railWidth(s.loops, s.broken)
-		detailW = s.width - railW - 2 // separator column + leading space
+	// The margins: a two-column gutter ahead of the rail. The gap past the
+	// separator stays a single space — widening it would shave columns off
+	// the timeline, and facts outrank air.
+	railW, detailW := s.railArea()
+	contentRows := s.contentRows()
+	gutter := ""
+	if s.roomy() {
+		gutter = "  "
 	}
-	contentRows := s.height - 4
 
 	var sel *loop.LoopView
 	if s.selected >= 0 && s.selected < len(s.loops) {
@@ -150,17 +189,28 @@ func renderFrame(s frameState) string {
 		rail = railLines(s, railW, contentRows)
 	}
 
-	// Chrome recedes: rules and the rail separator are dim so the content
-	// carries the frame.
+	// Chrome recedes: rules and the rail separator are dim, and at roomy
+	// sizes a blank row under each rule lets the content float.
+	blank := strings.Repeat(" ", s.width) + "\n"
 	var b strings.Builder
 	b.WriteString(padCell(headerCell(s), s.width) + "\n")
 	b.WriteString(paint(s.color, sgrDim, rule(s.width)) + "\n")
+	if s.roomy() {
+		b.WriteString(blank)
+	}
 	for i := 0; i < contentRows; i++ {
+		b.WriteString(gutter)
 		if railW > 0 {
 			b.WriteString(padCell(lineAt(rail, i), railW))
 			b.WriteString(paint(s.color, sgrDim, "│"))
+			b.WriteString(" ")
+		} else if gutter == "" {
+			b.WriteString(" ")
 		}
-		b.WriteString(" " + padCell(lineAt(detail, i), detailW) + "\n")
+		b.WriteString(padCell(lineAt(detail, i), detailW) + "\n")
+	}
+	if s.roomy() {
+		b.WriteString(blank)
 	}
 	b.WriteString(paint(s.color, sgrDim, rule(s.width)) + "\n")
 	b.WriteString(padCell(footerCell(s, sel, s.width), s.width) + "\n")
@@ -217,6 +267,9 @@ func headerCell(s frameState) cell {
 		styled(s.color, sgrBold, "loopy"),
 		plainCell("   "),
 	}
+	if s.roomy() {
+		cells = append([]cell{plainCell(" ")}, cells...)
+	}
 	if len(parts) == 0 {
 		cells = append(cells, styled(s.color, sgrDim, "no loops yet"))
 	}
@@ -233,7 +286,8 @@ func headerCell(s frameState) cell {
 	if s.once {
 		return left
 	}
-	hints := "? help · q quit"
+	// One hint; everything else lives behind ? (q included).
+	hints := "? help"
 	gap := s.width - loop.DisplayWidth(left.plain) - loop.DisplayWidth(hints) - 1
 	if gap < 2 {
 		return left
@@ -295,19 +349,33 @@ func statusPhrase(v loop.LoopView) string {
 	}
 }
 
-func railLines(s frameState, railW, rows int) []cell {
-	lines := make([]cell, 0, rows)
-	total := len(s.loops) + len(s.broken)
-	// Keep the selection visible when the list outgrows the rail.
-	start := 0
-	if total > rows && s.selected >= rows {
-		start = s.selected - rows + 1
+// railGroup buckets a loop by urgency: live work, things waiting on the
+// human, dead history. The rail separates the groups with a blank row.
+func railGroup(v loop.LoopView) int {
+	switch r := statusRank(v); {
+	case r == 0:
+		return 0 // live
+	case r <= 3:
+		return 1 // needs you: paused, stale, green to review
+	default:
+		return 2 // history: parked and decided
 	}
+}
+
+func railLines(s frameState, railW, rows int) []cell {
 	// One accent per row: the status glyph carries the color, the cursor is
 	// cyan, the ID is bold only when selected, and the budget is metadata.
+	// A blank row separates the urgency groups — the gap is the label.
+	var lines []cell
+	selLine := 0
+	prevGroup := -1
 	idW := railW - 2 - 2 - 2 - 5
-	for i := start; i < len(s.loops) && len(lines) < rows; i++ {
-		v := s.loops[i]
+	for i, v := range s.loops {
+		g := railGroup(v)
+		if prevGroup >= 0 && g != prevGroup {
+			lines = append(lines, cell{})
+		}
+		prevGroup = g
 		marker := styled(s.color, sgrCyan, "▶ ")
 		if i != s.selected {
 			marker = plainCell("  ")
@@ -317,6 +385,7 @@ func railLines(s frameState, railW, rows int) []cell {
 		idCell := plainCell(id)
 		if i == s.selected {
 			idCell = styled(s.color, sgrBold, id)
+			selLine = len(lines)
 		}
 		iters := fmt.Sprintf("%d/%d", v.IterationsUsed, v.MaxIterations)
 		if loop.DisplayWidth(iters) > 5 {
@@ -331,9 +400,10 @@ func railLines(s frameState, railW, rows int) []cell {
 		))
 	}
 	for _, b := range s.broken {
-		if len(lines) >= rows {
-			break
+		if prevGroup >= 0 && prevGroup != 2 {
+			lines = append(lines, cell{})
 		}
+		prevGroup = 2
 		lines = append(lines, joinCells(
 			plainCell("  "),
 			styled(s.color, sgrRed, "✗"),
@@ -341,7 +411,18 @@ func railLines(s frameState, railW, rows int) []cell {
 			styled(s.color, sgrDim, " (unreadable)"),
 		))
 	}
-	return lines
+	// Keep the selection visible when the list outgrows the rail.
+	if len(lines) <= rows {
+		return lines
+	}
+	start := 0
+	if selLine >= rows {
+		start = selLine - rows + 1
+	}
+	if start+rows > len(lines) {
+		start = len(lines) - rows
+	}
+	return lines[start : start+rows]
 }
 
 func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
@@ -362,14 +443,15 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 	}
 
 	// The detail header borrows the form's typography: dim labels, plain
-	// values, the status accent on the glyph and phrase only.
+	// values, the status accent on the glyph only — the phrase repeats the
+	// glyph in words, so it stays plain.
 	lines := make([]cell, 0, rows)
 	glyph, sgr := statusGlyph(*sel)
 	lines = append(lines, joinCells(
 		styled(s.color, sgr, glyph+" "),
 		styled(s.color, sgrBold, sel.ID),
 		styled(s.color, sgrDim, " — "),
-		styled(s.color, sgr, statusPhrase(*sel)),
+		plainCell(statusPhrase(*sel)),
 	))
 	lines = append(lines, joinCells(
 		styled(s.color, sgrDim, "goal   "),
@@ -385,7 +467,7 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 	))
 	lines = append(lines, activityLine(s, *sel, width))
 	lines = append(lines, cell{})
-	lines = append(lines, tabBar(s))
+	lines = append(lines, navBar(s))
 
 	bodyRows := rows - len(lines)
 	var body []cell
@@ -399,11 +481,18 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 }
 
 // activityLine is the two-second answer to "what is it doing right now".
+// Status color is glyph-sized: one colored glyph, then plain words.
 func activityLine(s frameState, v loop.LoopView, width int) cell {
+	mark := func(code, glyph, text string) cell {
+		return joinCells(
+			styled(s.color, code, glyph),
+			plainCell(" "+loop.TruncateDisplay(text, width-2)),
+		)
+	}
 	switch v.Status {
 	case loop.StatusRunning:
 		if !v.Live {
-			return styled(s.color, sgrYellow, loop.TruncateDisplay("no engine holds this loop — r resumes it, loopy abort stops it", width))
+			return mark(sgrYellow, "!", "no engine holds this loop — r resumes it, loopy abort stops it")
 		}
 		var now string
 		switch v.Phase {
@@ -417,32 +506,39 @@ func activityLine(s frameState, v loop.LoopView, width int) cell {
 		if s.phaseElapsed != "" && v.Phase != "" {
 			now += " · " + s.phaseElapsed
 		}
-		return styled(s.color, sgrCyan, loop.TruncateDisplay(now, width))
+		return mark(sgrCyan, "●", now)
 	case loop.StatusPaused:
-		return styled(s.color, sgrYellow, loop.TruncateDisplay("paused — r starts an engine and resumes", width))
+		return mark(sgrYellow, "◌", "paused — r starts an engine and resumes")
 	case loop.StatusGreen:
-		return styled(s.color, sgrGreen, loop.TruncateDisplay(fmt.Sprintf("✓ verifier green after %d iteration(s) — ready for review", v.IterationsUsed), width))
+		if v.IterationsUsed == 0 {
+			// Green with zero iterations means the agent never ran: honesty
+			// over celebration.
+			return mark(sgrYellow, "!", "already green at baseline — nothing to do, or the verifier may not test the goal")
+		}
+		return mark(sgrGreen, "✓", fmt.Sprintf("verifier green after %d iteration(s) — ready for review", v.IterationsUsed))
 	case loop.StatusParked:
-		return styled(s.color, sgrRed, loop.TruncateDisplay("✗ "+v.ParkedReason, width))
+		return mark(sgrRed, "✗", v.ParkedReason)
 	case loop.StatusAccepted:
-		return styled(s.color, sgrGreen, loop.TruncateDisplay("decided: accepted", width))
+		return mark(sgrGreen, "✓", "decided: accepted")
 	case loop.StatusRejected:
-		return styled(s.color, sgrRed, loop.TruncateDisplay("decided: rejected", width))
+		return mark(sgrRed, "✗", "decided: rejected")
 	}
 	return cell{}
 }
 
-// tabBar marks the active view in the accent color; the brackets are the
-// signal when color is off. Inverse video is not in this product's voice.
-func tabBar(s frameState) cell {
+// navBar is the quiet nav: ▸ plus cyan marks the active view, the rest sit
+// dim. The ▸ is the non-color signal, so color is never the only one.
+func navBar(s frameState) cell {
 	cells := make([]cell, 0, tabCount*2)
 	for i, name := range tabNames {
-		if tabID(i) == s.tab {
-			cells = append(cells, styled(s.color, sgrBold+";"+sgrCyan, "["+name+"]"))
-		} else {
-			cells = append(cells, styled(s.color, sgrDim, " "+name+" "))
+		if i > 0 {
+			cells = append(cells, plainCell("   "))
 		}
-		cells = append(cells, plainCell(" "))
+		if tabID(i) == s.tab {
+			cells = append(cells, styled(s.color, sgrCyan, "▸ "+name))
+		} else {
+			cells = append(cells, styled(s.color, sgrDim, name))
+		}
 	}
 	return joinCells(cells...)
 }
@@ -490,8 +586,11 @@ func overviewBody(s frameState, v loop.LoopView, width int) []cell {
 		))
 	}
 	if v.Status == loop.StatusRunning && v.Live {
-		label := fmt.Sprintf(" %-5d ● %s…", len(v.Iterations), runningVerb(v))
-		lines = append(lines, styled(s.color, sgrCyan, label))
+		lines = append(lines, joinCells(
+			plainCell(fmt.Sprintf(" %-5d ", len(v.Iterations))),
+			styled(s.color, sgrCyan, "●"),
+			plainCell(" "+runningVerb(v)+"…"),
+		))
 	}
 	if v.LastFeedback != "" && v.Status != loop.StatusGreen && v.Status != loop.StatusAccepted {
 		lines = append(lines, cell{}, styled(s.color, sgrDim, " last feedback tail:"))
@@ -541,16 +640,20 @@ func artifactBody(s frameState, width int) []cell {
 		return []cell{styled(s.color, sgrDim, " nothing here yet ("+art.label+")")}
 	}
 	banner := " " + art.label
-	code := sgrDim
+	head := styled(s.color, sgrDim, loop.TruncateDisplay(banner, width))
 	if art.truncated {
 		shown := int64(0)
 		for _, l := range art.lines {
 			shown += int64(len(l)) + 1
 		}
 		banner += fmt.Sprintf(" · truncated: showing last %s of %s", loop.HumanBytes(int(shown)), loop.HumanBytes(int(art.size)))
-		code = sgrYellow
+		// The facts stay dim; the glyph alone says "partial".
+		head = joinCells(
+			styled(s.color, sgrYellow, " !"),
+			styled(s.color, sgrDim, loop.TruncateDisplay(banner, width-2)),
+		)
 	}
-	lines := []cell{styled(s.color, code, loop.TruncateDisplay(banner, width))}
+	lines := []cell{head}
 	for _, l := range art.lines {
 		lines = append(lines, plainCell(" "+loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)))
 	}
@@ -662,6 +765,7 @@ func helpLines(s frameState) []cell {
 		{"tab / 1-4", "switch view: overview, live, diff, verifier"},
 		{"n", "start a new loop (goal + the project verifier)"},
 		{"g / G", "jump to top / follow the tail"},
+		{"pgup/pgdn", "page through the body"},
 		{"p", "pause at the next iteration boundary"},
 		{"r", "resume a paused loop (spawns the engine)"},
 		{"a", "abort (asks for confirmation)"},
@@ -686,20 +790,31 @@ func helpLines(s frameState) []cell {
 	return lines
 }
 
-// footerKeys are dropped right-to-left when the next command needs the room;
-// they are never cut mid-word.
-var listKeys = []string{"↑↓ loop", "n new", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"}
-var detailKeys = []string{"↑↓ scroll", "g top", "G follow", "esc back", "tab view", "? help", "q quit"}
-var formKeys = []string{"enter next step", "esc back", "ctrl+c quit"}
+// The footer ships one short hint chain; every other binding lives behind ?.
+// Facts (the next command) keep their place — only hints compressed.
+const listHints = "n new · enter open · ? keys"
+const detailHints = "esc back · ? keys"
 
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
+	margin := " "
+	if s.roomy() {
+		margin = "  "
+	}
 	switch {
 	case s.form.active && s.flash == "":
-		return styled(s.color, sgrDim, loop.TruncateDisplay(" "+strings.Join(formKeys, " · "), width))
+		// The wizard screens carry their own affordance line.
+		return cell{}
 	case s.confirmAbort && sel != nil:
-		return styled(s.color, sgrRed, loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width))
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrRed, "✗"),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+		)
 	case s.flash != "":
-		return styled(s.color, sgrYellow, loop.TruncateDisplay(" "+s.flash, width))
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrBold, loop.TruncateDisplay(s.flash, width-len(margin))),
+		)
 	}
 
 	next := ""
@@ -712,33 +827,28 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 		return styled(s.color, sgrCyan, " "+next)
 	}
 
-	keys := listKeys
+	hints := listHints
 	if s.focusDetail {
-		keys = detailKeys
+		hints = detailHints
 	}
-	avail := width - loop.DisplayWidth(next) - 3
-	var kept []string
-	used := 0
-	for _, k := range keys {
-		need := loop.DisplayWidth(k)
-		if len(kept) > 0 {
-			need += 3 // " · "
+	if next == "" {
+		return styled(s.color, sgrDim, margin+hints)
+	}
+	// The next command always wins the space fight. Hints yield whole —
+	// first down to the bare ? (so the way back to every key stays on
+	// screen), then entirely — never cut mid-word.
+	for _, h := range []string{hints, "? keys"} {
+		keyText := margin + h
+		gap := width - loop.DisplayWidth(keyText) - loop.DisplayWidth(next) - len(margin)
+		if gap < 2 {
+			continue
 		}
-		if used+need > avail {
-			break
-		}
-		kept = append(kept, k)
-		used += need
+		return joinCells(
+			styled(s.color, sgrDim, keyText),
+			plainCell(strings.Repeat(" ", gap)),
+			styled(s.color, sgrCyan, next),
+			plainCell(margin),
+		)
 	}
-	keyText := " " + strings.Join(kept, " · ")
-	gap := width - loop.DisplayWidth(keyText) - loop.DisplayWidth(next) - 1
-	if gap < 0 {
-		return styled(s.color, sgrCyan, loop.TruncateDisplay(" "+next, width))
-	}
-	return joinCells(
-		styled(s.color, sgrDim, keyText),
-		plainCell(strings.Repeat(" ", gap)),
-		styled(s.color, sgrCyan, next),
-		plainCell(" "),
-	)
+	return styled(s.color, sgrCyan, loop.TruncateDisplay(margin+next, width))
 }

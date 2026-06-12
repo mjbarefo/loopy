@@ -189,16 +189,23 @@ func startLoops(root string, f formState) ([]string, error) {
 	return ids, nil
 }
 
-// formLines renders the current wizard screen into the detail pane.
+// formLines renders the current wizard screen into the detail pane. This is
+// the launch-screen moment of the working monitor: headroom above the title,
+// blank rows between regions, one accent per screen (the input cursor, or
+// the action line on confirm), and one dim affordance line at the bottom.
 func formLines(s frameState, width int) []cell {
 	f := s.form
-	lines := []cell{
+	var lines []cell
+	if s.roomy() {
+		lines = append(lines, cell{})
+	}
+	lines = append(lines,
 		joinCells(
 			styled(s.color, sgrBold, "start a loop"),
-			styled(s.color, sgrDim, fmt.Sprintf("   step %d of %d · esc goes back", f.step+1, stepCount)),
+			styled(s.color, sgrDim, fmt.Sprintf("   step %d of %d", f.step+1, stepCount)),
 		),
-		{},
-	}
+		cell{},
+	)
 	switch f.step {
 	case stepGoal:
 		lines = append(lines, goalLines(s, width)...)
@@ -212,6 +219,11 @@ func formLines(s frameState, width int) []cell {
 		lines = append(lines, confirmLines(s, width)...)
 	}
 	return lines
+}
+
+// affordance is the one dim hint line each wizard screen ends with.
+func affordance(s frameState, text string) cell {
+	return styled(s.color, sgrDim, text)
 }
 
 func inputCell(s frameState, label, value string, active bool, width int) cell {
@@ -229,9 +241,9 @@ func goalLines(s frameState, width int) []cell {
 	return []cell{
 		inputCell(s, "goal  ", s.form.goal, true, width),
 		{},
-		styled(s.color, sgrDim, "describe what done looks like — the agent iterates until the verifier passes"),
+		styled(s.color, sgrDim, "describe what done looks like — the agent iterates until the verifier passes."),
 		{},
-		styled(s.color, sgrCyan, "enter continues"),
+		affordance(s, "enter continues · esc cancels"),
 	}
 }
 
@@ -239,13 +251,16 @@ func agentLines(s frameState, width int) []cell {
 	f := s.form
 	if len(f.agents) == 0 && len(f.detected) == 0 {
 		return []cell{
-			styled(s.color, sgrYellow, "✗ no agent CLIs registered or found on this machine"),
+			joinCells(
+				styled(s.color, sgrYellow, "✗"),
+				plainCell(" no agent CLIs registered or found on this machine"),
+			),
 			{},
 			styled(s.color, sgrDim, loop.TruncateDisplay(`register one first:  loopy agent add claude --cmd "claude -p {prompt} --permission-mode acceptEdits" --default`, width)),
 		}
 	}
 
-	lines := []cell{styled(s.color, sgrDim, "who does the work — space marks more than one to race them")}
+	lines := []cell{styled(s.color, sgrDim, "who does the work — space marks more than one to race them.")}
 	lines = append(lines, cell{})
 	if len(f.agents) > 0 {
 		for i, a := range f.agents {
@@ -255,9 +270,10 @@ func agentLines(s frameState, width int) []cell {
 				marker = styled(s.color, sgrCyan, " ▶ ")
 				name = styled(s.color, sgrBold, a)
 			}
+			// The race mark is a plain glyph: the cursor keeps the accent.
 			mark := plainCell("  ")
 			if f.picked[i] {
-				mark = styled(s.color, sgrCyan, "✓ ")
+				mark = plainCell("✓ ")
 			}
 			note := ""
 			if a == f.defaultAgent {
@@ -265,7 +281,7 @@ func agentLines(s frameState, width int) []cell {
 			}
 			lines = append(lines, joinCells(marker, mark, name, styled(s.color, sgrDim, note)))
 		}
-		lines = append(lines, cell{}, styled(s.color, sgrCyan, "enter continues with "+strings.Join(f.selectedAgents(), " + ")))
+		lines = append(lines, cell{}, affordance(s, "enter continues with "+strings.Join(f.selectedAgents(), " + ")+" · esc goes back"))
 		return lines
 	}
 
@@ -280,7 +296,7 @@ func agentLines(s frameState, width int) []cell {
 		}
 		lines = append(lines, joinCells(marker, name, styled(s.color, sgrDim, loop.TruncateDisplay("  ("+d.Cmd+")", width-20))))
 	}
-	lines = append(lines, cell{}, styled(s.color, sgrCyan, "enter registers it and continues"))
+	lines = append(lines, cell{}, affordance(s, "enter registers it and continues · esc goes back"))
 	return lines
 }
 
@@ -299,9 +315,9 @@ func verifierLines(s frameState, width int) []cell {
 		inputCell(s, "verifier  ", f.verifier, true, width),
 		styled(s.color, sgrDim, loop.TruncateDisplay("          "+source, width)),
 		{},
-		styled(s.color, sgrDim, "this command decides green: exit 0 means the goal is met"),
+		styled(s.color, sgrDim, "this command decides green: exit 0 means the goal is met."),
 		{},
-		styled(s.color, sgrCyan, "enter continues"),
+		affordance(s, "enter continues · esc goes back"),
 	}
 }
 
@@ -311,9 +327,9 @@ func budgetLines(s frameState) []cell {
 		inputCell(s, "iterations  ", f.iters, f.budgetField == 0, 40),
 		inputCell(s, "wall clock  ", f.wall, f.budgetField == 1, 40),
 		{},
-		styled(s.color, sgrDim, "hard caps — the loop parks when either runs out (↑↓ switches fields)"),
+		styled(s.color, sgrDim, "hard caps — the loop parks when either runs out (↑↓ switches fields)."),
 		{},
-		styled(s.color, sgrCyan, "enter continues"),
+		affordance(s, "enter continues · esc goes back"),
 	}
 }
 
@@ -335,6 +351,8 @@ func confirmLines(s frameState, width int) []cell {
 		joinCells(styled(s.color, sgrDim, "verifier  "), plainCell(loop.TruncateDisplay(strings.Join(parts, " && "), width-10))),
 		joinCells(styled(s.color, sgrDim, "budget    "), plainCell(f.iters+" iterations · "+f.wall)),
 		{},
-		styled(s.color, sgrCyan, action),
+		// The action line is this screen's one accent and one affordance;
+		// esc was the same on every screen before it.
+		styled(s.color, sgrCyan, loop.TruncateDisplay(action, width)),
 	}
 }

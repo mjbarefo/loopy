@@ -407,13 +407,13 @@ func (m *model) scrollBy(delta int) {
 }
 
 // detailFixedRows mirrors the frame's layout: status, goal, meta, activity,
-// spacer, tab bar.
+// spacer, nav bar.
 const detailFixedRows = 6
 
-// bodyRows mirrors the frame's layout math: header + two rules + footer eat
-// four rows; the detail header eats detailFixedRows more.
+// bodyRows asks the frame's own geometry how many body rows remain after
+// the chrome and the fixed detail header.
 func (m model) bodyRows() int {
-	return m.height - 4 - detailFixedRows
+	return m.frameState().contentRows() - detailFixedRows
 }
 
 func (m model) bodyLineCount() int {
@@ -428,10 +428,8 @@ func (m model) bodyLineCount() int {
 }
 
 func (m model) detailWidth() int {
-	if m.width >= collapseWidth && (len(m.loops) > 0 || len(m.broken) > 0) {
-		return m.width - railWidth(m.loops, m.broken) - 2
-	}
-	return m.width - 1
+	_, detailW := m.frameState().railArea()
+	return detailW
 }
 
 func (m model) frameState() frameState {
