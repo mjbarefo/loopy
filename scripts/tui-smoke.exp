@@ -192,7 +192,7 @@ exec sh -c "mkdir -p '$nogit/code/herdr' && cd '$nogit/code/herdr' && git init -
 cd $nogit
 spawn $bin
 expect {
-    -ex "pick where loops should live" {}
+    -ex "pick a project to run loops in" {}
     timeout { fail "picker: chooser never appeared" }
 }
 expect {

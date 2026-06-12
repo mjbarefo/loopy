@@ -150,8 +150,9 @@ func renderPicker(s pickerState) string {
 	lines = append(lines,
 		joinCells(
 			plainCell(" "+abbrevHome(s.start)+" is not a git repository — "),
-			styled(s.color, sgrBold, "pick where loops should live:"),
+			styled(s.color, sgrBold, "pick a project to run loops in:"),
 		),
+		styled(s.color, sgrDim, "   loop state lives inside the repo it works on, under .loopy/"),
 		cell{},
 	)
 
@@ -183,7 +184,7 @@ func repoListLines(s pickerState) []cell {
 	if s.height >= 18 {
 		used += len(logoArt) + 1
 	}
-	rows := s.height - used - 2 - footer
+	rows := s.height - used - 3 - footer // 3: header, annotation, blank
 	if rows < 1 {
 		rows = 1
 	}

@@ -343,7 +343,8 @@ func TestRenderPicker(t *testing.T) {
 	for _, want := range []string{
 		"engineer loops, not prompts",
 		"/tmp/nowhere is not a git repository",
-		"pick where loops should live:",
+		"pick a project to run loops in:",
+		"loop state lives inside the repo it works on, under .loopy/",
 		"▶ /tmp/projects/alpha",
 		"3 loop(s)",
 		"/tmp/projects/beta",

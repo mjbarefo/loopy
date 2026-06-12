@@ -355,6 +355,13 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   System Settings → Privacy & Security path, because a silent TCC block
   is otherwise indistinguishable from having no repos.
 
+- **2026-06-11 — Picker copy: "pick a project to run loops in", not "pick
+  where loops should live".** The first phrasing read as a storage
+  decision and prompted exactly that user question ("where should the
+  loops live?"). The picker chooses a project, not a home for data; a dim
+  annotation under the header ("loop state lives inside the repo it works
+  on, under .loopy/") answers the storage question in place.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
