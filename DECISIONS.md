@@ -570,6 +570,20 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   rung of "running a loop is natural": when the environment is the problem,
   the park reason is the fix.
 
+- **2026-06-12 — Agent preflight: `loopy agent check`, not a side effect of
+  registration.** The owner wanted trust/auth failures surfaced before they
+  block a loop. The calls: a real smoke run (trivial prompt, throwaway
+  directory, 2-minute cap) spends a model call, so it is an explicit command
+  — registration stays instant and free, and `agent add` prints the
+  `loopy agent check <name>` hint instead of silently spending money. What
+  *is* free runs everywhere: `agent add` warns inline when the template's
+  binary isn't on PATH, and `loopy doctor` warns per registered agent. The
+  engine's "agent blocked" park stays the backstop for what only a real
+  iteration can reveal. Also: the gemini suggestion in `KnownAgentCLIs`,
+  help text, and docs/agents.md now carries `--skip-trust` — proven by a
+  green loop today; without it every loop worktree is an untrusted
+  directory and gemini refuses to work.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

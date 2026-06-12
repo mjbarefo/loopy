@@ -62,6 +62,13 @@ func Doctor(root string) []DoctorCheck {
 	default:
 		add("agents", DoctorOK, fmt.Sprintf("%d agent(s), default %q", len(reg.Agents), reg.Default))
 	}
+	// Per-agent binary presence: free to check, and a missing CLI otherwise
+	// surfaces as an "agent blocked" park three steps later.
+	for _, name := range AgentNames(reg) {
+		if bin := MissingAgentBinary(reg.Agents[name].Cmd); bin != "" {
+			add("agents", DoctorWarn, fmt.Sprintf("agent %q needs %q, which is not on PATH; loops with it will park \"agent blocked\" (smoke-test agents with `loopy agent check`)", name, bin))
+		}
+	}
 
 	loops, broken, err := ListLoops(root)
 	if err != nil {

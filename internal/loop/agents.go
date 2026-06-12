@@ -161,14 +161,16 @@ type AgentSuggestion struct {
 }
 
 // KnownAgentCLIs is the suggestion table behind `loopy init` and the
-// monitor's onboarding: claude and codex are exercised through real loops;
-// gemini is still a suggestion.
+// monitor's onboarding; all three are exercised through real loops
+// (docs/agents.md is the evidence trail).
 var KnownAgentCLIs = []AgentSuggestion{
 	{Binary: "claude", Name: "claude", Cmd: "claude -p {prompt} --permission-mode acceptEdits"},
 	// Plain `codex exec` runs read-only and can't edit the worktree;
 	// --full-auto is the workspace-write, no-prompts mode.
 	{Binary: "codex", Name: "codex", Cmd: "codex exec --full-auto {prompt}"},
-	{Binary: "gemini", Name: "gemini", Cmd: "gemini -p {prompt} --yolo"},
+	// Without --skip-trust, gemini refuses headless work in any directory it
+	// hasn't interactively trusted — and every loop worktree is one of those.
+	{Binary: "gemini", Name: "gemini", Cmd: "gemini -p {prompt} --yolo --skip-trust"},
 }
 
 // DetectAgentCLIs returns the known agent CLIs present on PATH that are not

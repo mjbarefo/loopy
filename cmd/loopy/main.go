@@ -172,6 +172,8 @@ judge:
 setup:
   loopy init                            prepare this repository for loops
   loopy agent add <name> --cmd <tmpl>   register an agent command
+  loopy agent check [name]              smoke-run agents — catches trust and
+                                        auth problems before they block a loop
   loopy agent list | remove <name>      manage registered agents
   loopy doctor [--json]                 diagnose environment and state
   loopy version                         print version
