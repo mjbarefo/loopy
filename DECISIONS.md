@@ -362,6 +362,36 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   annotation under the header ("loop state lives inside the repo it works
   on, under .loopy/") answers the storage question in place.
 
+- **2026-06-11 — The new-loop form became a five-step wizard.** Owner
+  feedback: composing a loop on the CLI (goal + repeated `--verify` flags
+  + budget flags) assumes someone who already knows agentic development;
+  the monitor should walk the user through it. `n` now steps through
+  goal → agent → verifier → budget → confirm, one question per screen in
+  plain words, defaults prefilled, enter advances, esc walks back. The
+  agent step lists registered agents (space marks several — that races
+  them, one loop per agent via the same detached-resume path, with
+  `loopy judge <ids>` suggested when they all park; the monitor still
+  never drives engines, so the CLI's blocking `RunRace`/auto-judge stays
+  CLI-only and no race.json is written from the TUI). When no agents are
+  registered the step offers the detected CLIs and registers the chosen
+  one in place, so `n` now only requires an initialized repo. The
+  verifier step is an editable command with provenance shown — an
+  untouched stored/inferred prefill keeps its multi-stage form and the
+  confirm-once storage contract; an edited command runs as a single
+  stage for this loop only and is not stored (matching `--verify`
+  semantics). Budget fields are validated text, not flags.
+
+- **2026-06-11 — Default iteration budget: 8 → 5.** Owner asked to lean
+  smaller (citing reported research that ~3 rounds is usually enough).
+  Self-refinement returns do fall off steeply after the first feedback
+  rounds, and stuck detection (no-change, same-failure-3x) parks
+  degenerate loops before any cap — but this repo's own history argues
+  against 3: the display-width loop did 4 productive iterations of real
+  diagnostic work. 5 covers the observed maximum with margin while
+  halving the worst-case tail; the cap is a ceiling on slow progress,
+  not a target, since green ends the loop immediately. Per-loop override
+  stays one field in the wizard and `--max-iters` in the CLI.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
