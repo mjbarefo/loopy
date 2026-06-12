@@ -161,6 +161,57 @@ func TestEngineParksWhenAgentDoesNothing(t *testing.T) {
 	}
 }
 
+// TestEngineParksAgentBlocked: a nonzero agent exit with an untouched
+// worktree is an environment failure (trust prompt, dead auth, missing CLI),
+// parked as "agent blocked" with the CLI's own last words — never as stuck.
+func TestEngineParksAgentBlocked(t *testing.T) {
+	agent := `printf '\033[31mdemo CLI: directory not trusted, refusing to run\033[0m\n' >&2; exit 55`
+	root := newLoopProject(t, agent)
+	l := mustCreate(t, root, CreateOptions{
+		Goal:     "unachievable",
+		Verifier: []Stage{{Name: "red", Cmd: "test -f done.txt"}},
+	})
+	final, err := RunEngine(root, l.ID, Events{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Status != StatusParked {
+		t.Fatalf("status = %s", final.Status)
+	}
+	if !strings.Contains(final.ParkedReason, "agent blocked (exit 55)") {
+		t.Fatalf("reason = %q, want agent blocked", final.ParkedReason)
+	}
+	if !strings.Contains(final.ParkedReason, "directory not trusted") {
+		t.Fatalf("reason = %q, want the agent's own words", final.ParkedReason)
+	}
+	if strings.Contains(final.ParkedReason, "stuck") {
+		t.Fatalf("reason = %q must not read as stuck", final.ParkedReason)
+	}
+	if strings.Contains(final.ParkedReason, "\x1b") {
+		t.Fatalf("reason = %q must be ANSI-free", final.ParkedReason)
+	}
+	if final.IterationsUsed != 1 {
+		t.Fatalf("iterations used = %d, want 1 — a blocked agent must not burn budget", final.IterationsUsed)
+	}
+}
+
+// TestEngineNonzeroExitWithProgressIsNotBlocked: an agent that did real work
+// before exiting nonzero is judged by its verifier, not parked as blocked.
+func TestEngineNonzeroExitWithProgressIsNotBlocked(t *testing.T) {
+	root := newLoopProject(t, `echo done > done.txt; exit 1`)
+	l := mustCreate(t, root, CreateOptions{
+		Goal:     "create done.txt",
+		Verifier: []Stage{{Name: "done", Cmd: "test -f done.txt"}},
+	})
+	final, err := RunEngine(root, l.ID, Events{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Status != StatusGreen {
+		t.Fatalf("status = %s (%s), want green — the verifier outranks the exit code", final.Status, final.ParkedReason)
+	}
+}
+
 func TestEngineParksOnRepeatedIdenticalFailure(t *testing.T) {
 	// The agent always changes something (so no-change never fires) but never
 	// fixes the failure, whose output is identical every time.

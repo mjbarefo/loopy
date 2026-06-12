@@ -264,7 +264,62 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 		if it.Green {
 			return endGreen(root, l, "", iterations, ev)
 		}
+		// A nonzero agent exit that left the worktree untouched means the
+		// agent CLI never got to work — a trust prompt, dead auth, a missing
+		// binary — not a model that tried and failed. "Stuck" would hide the
+		// one-line fix; park with the agent's own last words instead.
+		if reason, blocked := agentBlocked(root, l, it, last); blocked {
+			return parkLoop(root, l, reason, ev)
+		}
 	}
+}
+
+// agentBlocked reports an iteration where the agent exited nonzero without
+// changing the diff. The model is judged by detectStuck; this is about the
+// CLI around it never starting.
+func agentBlocked(root string, l Loop, it, prev Iteration) (string, bool) {
+	if it.AgentExit == nil || *it.AgentExit == 0 || it.DiffHash != prev.DiffHash {
+		return "", false
+	}
+	reason := fmt.Sprintf("agent blocked (exit %d): the agent command failed without touching the worktree", *it.AgentExit)
+	if words := lastAgentWords(filepath.Join(IterationDir(root, l.ID, it.Index), AgentLogFile)); words != "" {
+		reason = fmt.Sprintf("agent blocked (exit %d): %s", *it.AgentExit, words)
+	}
+	return reason, true
+}
+
+// lastAgentWords is the last non-empty line of the agent log, ANSI-stripped
+// and bounded — the most likely place a CLI states why it refused to run.
+// The full transcript stays in agent.log.
+func lastAgentWords(path string) string {
+	data, _, _, err := TailFile(path, FeedbackTailBytes)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(stripANSI(lines[i])); line != "" {
+			return TruncateDisplay(line, 300)
+		}
+	}
+	return ""
+}
+
+// stripANSI drops CSI escape sequences so a CLI's styled error reads clean
+// in a park reason (and in loop.json).
+func stripANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			i += 2
+			for i < len(s) && (s[i] < 0x40 || s[i] > 0x7e) {
+				i++
+			}
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // runBaseline records iteration 0: verifier only, no agent, empty diff.
