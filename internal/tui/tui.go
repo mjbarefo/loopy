@@ -64,7 +64,11 @@ func RenderOnce(root, loopID string) (string, error) {
 	} else {
 		rows += 16 // empty/onboarding state
 	}
-	s.height = clamp(rows+4, minHeight, 64)
+	height := rows + 4
+	if s.width >= collapseWidth && height >= marginHeight {
+		height = rows + 6 // tall enough for margins: count their rows too
+	}
+	s.height = clamp(height, minHeight, 64)
 	s.scroll = 0
 	return renderFrame(s), nil
 }

@@ -108,9 +108,9 @@ func TestFrameColorOnKeepsGlyphs(t *testing.T) {
 }
 
 // TestFrameIdentityAccents pins the visual identity: the ∞ lockup in the
-// header, dim chrome, cyan-bold active tab (no inverse video), and status
-// color in exactly one place per row — the rail glyph and the verdict cell,
-// never the whole line.
+// header, dim chrome, the ▸+cyan nav (no brackets, no inverse video), and
+// status color in exactly one place per row — the rail glyph and the verdict
+// cell, never the whole line.
 func TestFrameIdentityAccents(t *testing.T) {
 	s := wideState()
 	s.color = true
@@ -120,10 +120,13 @@ func TestFrameIdentityAccents(t *testing.T) {
 		t.Error("header missing the cyan ∞ mark + bold wordmark lockup")
 	}
 	if strings.Contains(frame, "\x1b[7m") {
-		t.Error("inverse video crept back in; the active tab is cyan-bold")
+		t.Error("inverse video crept back in; the active nav item is ▸ + cyan")
 	}
-	if !strings.Contains(frame, "\x1b[1;36m[overview]\x1b[0m") {
-		t.Error("active tab should be cyan-bold")
+	if !strings.Contains(frame, "\x1b[36m▸ overview\x1b[0m") {
+		t.Error("active nav item should be ▸ + cyan")
+	}
+	if strings.Contains(frame, "[overview]") {
+		t.Error("bracketed tabs are retired; the nav marks the active view with ▸")
 	}
 	if !strings.Contains(frame, "\x1b[2m"+rule(8)) {
 		t.Error("rules should be dim chrome")
@@ -483,29 +486,162 @@ func TestFrameBrokenLoopVisible(t *testing.T) {
 	}
 }
 
-func TestFooterDropsWholeKeyHints(t *testing.T) {
+func footerLine(t *testing.T, frame string) string {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	return lines[len(lines)-1]
+}
+
+// TestFooterNextCommandWins: when the hints and the next command cannot
+// share the footer, the hints vanish entirely (they live behind ?) — never
+// cut mid-word. The next command is a fact and always stays.
+func TestFooterNextCommandWins(t *testing.T) {
 	s := wideState()
 	s.selected = 1 // parked: footer carries next: loopy review flaky-importer
-	s.width = 64
+	s.width = 48
 	frame := renderFrame(s)
-	checkFrameGeometry(t, frame, 64, 36)
+	checkFrameGeometry(t, frame, 48, 36)
 	if !strings.Contains(frame, "next: loopy review flaky-importer") {
 		t.Errorf("the next command always wins the space fight\n%s", frame)
 	}
-	// No key hint is ever cut mid-word: every hint present is complete.
-	footer := strings.Split(strings.TrimRight(frame, "\n"), "\n")
-	last := footer[len(footer)-1]
-	for _, hint := range []string{"↑↓ loop", "enter drill", "tab view", "p pause", "r resume", "a abort", "? help", "q quit"} {
-		for _, word := range strings.Fields(hint) {
-			if i := strings.Index(last, word[:1]); i >= 0 {
-				continue // presence is fine; we only forbid partial words below
-			}
+	if strings.Contains(footerLine(t, frame), "n new") {
+		t.Errorf("hints should yield entirely when the next command needs the room: %q", footerLine(t, frame))
+	}
+
+	// With room, hints and the command share the line.
+	s.width = 80
+	frame = renderFrame(s)
+	last := footerLine(t, frame)
+	if !strings.Contains(last, "n new · enter open · ? keys") || !strings.Contains(last, "next: loopy review flaky-importer") {
+		t.Errorf("a roomy footer carries both hints and the next command: %q", last)
+	}
+}
+
+// TestFrameFooterDiet pins the hint budget: three hints in the footer, one
+// in the header, everything else behind ?.
+func TestFrameFooterDiet(t *testing.T) {
+	frame := renderFrame(wideState())
+	last := footerLine(t, frame)
+	if !strings.Contains(last, "n new · enter open · ? keys") {
+		t.Errorf("footer should ship the three-hint chain, got %q", last)
+	}
+	for _, gone := range []string{"↑↓ loop", "tab view", "p pause", "r resume", "a abort", "q quit"} {
+		if strings.Contains(last, gone) {
+			t.Errorf("footer hint %q should live behind ?", gone)
 		}
 	}
-	for _, partial := range []string{"dril…", "pa…", "res…", "abo…", "h…"} {
-		if strings.Contains(last, partial) {
-			t.Errorf("footer cut a key hint mid-word: %q", last)
-		}
+	header := strings.SplitN(frame, "\n", 2)[0]
+	if strings.Contains(header, "q quit") {
+		t.Error("the header dropped q quit; ? retains it")
+	}
+	if !strings.Contains(header, "? help") {
+		t.Error("the header keeps its single ? hint")
+	}
+
+	s := wideState()
+	s.focusDetail = true
+	if !strings.Contains(footerLine(t, renderFrame(s)), "esc back · ? keys") {
+		t.Error("detail focus footer should be esc back · ? keys")
+	}
+}
+
+// TestFrameMargins: at roomy sizes a blank row sits inside each rule and the
+// content floats behind a two-column gutter; below ~80x20 the dense layout
+// is byte-identical to the old one.
+func TestFrameMargins(t *testing.T) {
+	s := wideState() // 120x36 is roomy
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	if strings.TrimSpace(lines[2]) != "" {
+		t.Errorf("roomy frames keep a blank row under the header rule, got %q", lines[2])
+	}
+	if strings.TrimSpace(lines[len(lines)-3]) != "" {
+		t.Errorf("roomy frames keep a blank row above the footer rule, got %q", lines[len(lines)-3])
+	}
+	if !strings.HasPrefix(lines[3], "  ▶") {
+		t.Errorf("the rail floats behind a two-column gutter, got %q", lines[3])
+	}
+
+	// Short terminals spend no rows on margins.
+	s.height = 18
+	frame = renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 18)
+	lines = strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	if !strings.HasPrefix(lines[2], "▶") {
+		t.Errorf("short frames keep the dense rail at the edge, got %q", lines[2])
+	}
+}
+
+// TestRailGroupGaps: the rail separates live work, loops needing the human,
+// and history with a blank row — the gap is the label.
+func TestRailGroupGaps(t *testing.T) {
+	s := wideState() // one live loop, one parked: two groups
+	railW := railWidth(s.loops, s.broken)
+	lines := railLines(s, railW, 20)
+	if len(lines) != 3 {
+		t.Fatalf("want live row, gap, history row; got %d lines", len(lines))
+	}
+	if lines[1].plain != "" {
+		t.Errorf("urgency groups should be separated by a blank row, got %q", lines[1].plain)
+	}
+	if !strings.Contains(lines[2].plain, "flaky-importer") {
+		t.Errorf("history group missing its loop, got %q", lines[2].plain)
+	}
+}
+
+// TestFrameColorDiet: status hues are glyph-sized. The activity line is a
+// colored glyph plus plain words; the title's status phrase is plain; the
+// live timeline row colors only its dot. The verdict cell (tested above)
+// stays the one permitted block of status color.
+func TestFrameColorDiet(t *testing.T) {
+	s := wideState()
+	s.color = true
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "\x1b[36m●\x1b[0m now: agent running") {
+		t.Error("running activity should be a cyan glyph + plain text")
+	}
+	if !strings.Contains(frame, "\x1b[2m — \x1b[0mrunning") {
+		t.Error("the title's status phrase should be plain — the glyph says it")
+	}
+	if !strings.Contains(frame, "\x1b[36m●\x1b[0m agent running…") {
+		t.Error("the live timeline row should color only its dot")
+	}
+
+	s.selected = 1 // parked
+	frame = renderFrame(s)
+	if !strings.Contains(frame, "\x1b[31m✗\x1b[0m stuck: no change") {
+		t.Error("parked activity should be a red glyph + the plain reason")
+	}
+}
+
+// TestFrameBaselineGreenHonesty: green after zero iterations means the agent
+// never ran — the monitor says so instead of celebrating.
+func TestFrameBaselineGreenHonesty(t *testing.T) {
+	s := wideState()
+	s.loops[0] = loop.LoopView{
+		ID: "already-green", Goal: "a goal the verifier may not test",
+		Agent: "claude", Status: loop.StatusGreen,
+		IterationsUsed: 0, MaxIterations: 5,
+		WallClockUsed: "1s", MaxWallClock: "30m",
+		Iterations:  []loop.IterationView{{Index: 0, Baseline: true, Green: true}},
+		NextCommand: "loopy review already-green",
+	}
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "already green at baseline — nothing to do, or the verifier may not test the goal") {
+		t.Errorf("baseline green must be named honestly\n%s", frame)
+	}
+	if strings.Contains(frame, "ready for review") {
+		t.Error("baseline green is not a win; no celebration line")
+	}
+
+	s.color = true
+	frame = renderFrame(s)
+	if !strings.Contains(frame, "\x1b[33m!\x1b[0m already green at baseline") {
+		t.Error("baseline green carries the caution glyph")
+	}
+	if strings.Contains(frame, "\x1b[32m✓\x1b[0m verifier green") {
+		t.Error("baseline green must not reuse the green success line")
 	}
 }
 

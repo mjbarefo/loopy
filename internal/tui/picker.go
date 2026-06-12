@@ -235,8 +235,11 @@ func emptyScanLines(s pickerState) []cell {
 	}
 	if len(s.denied) > 0 {
 		lines = append(lines, cell{},
-			styled(s.color, sgrYellow, " could not read: "+strings.Join(s.denied, ", ")+" — macOS may be blocking your terminal."),
-			styled(s.color, sgrYellow, " allow it under System Settings → Privacy & Security → Files & Folders, then run loopy again."),
+			joinCells(
+				styled(s.color, sgrYellow, " !"),
+				plainCell(" could not read: "+strings.Join(s.denied, ", ")+" — macOS may be blocking your terminal."),
+			),
+			plainCell("   allow it under System Settings → Privacy & Security → Files & Folders, then run loopy again."),
 		)
 	}
 	return lines
