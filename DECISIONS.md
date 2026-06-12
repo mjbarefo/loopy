@@ -313,6 +313,33 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   in `internal/tui` (`FrontDoor`) beside the splash that owns the
   branding; the home directory displays as `~`.
 
+- **2026-06-11 — The logo is now a pixel lemniscate.** The original mark
+  didn't resolve into anything at a glance; the owner asked for something
+  circular/loop-inspired. The new art is two textured loops whose inner
+  walls slope into an X crossing at the center — a literal infinity, drawn
+  with the same two weights (`██` stroke, `░░` weave) and the same 5×18
+  footprint, so every layout that centers or measures it is untouched.
+  One source of truth in `welcome.go` (`logoArt`); README updated to
+  match. The header's compact `∞` mark now abbreviates the actual logo.
+
+- **2026-06-11 — Outside a repo, the front door becomes a repo picker.**
+  When bare `loopy` finds git repositories nearby, it offers them instead
+  of instructions: a chooser with the identity block, `↑↓`/enter into the
+  chosen repo's monitor (onboarding takes over from there), `g` to
+  git-init in place — `g` is a deliberate labeled keypress, never the
+  default, so an accidental enter can't initialize `~`. Discovery
+  (`loop.FindRepos`, stdlib-only) walks breadth-first, bounded in depth
+  (4), directories (8000), results (100), and time (1.5s) — a front door
+  must open instantly, so an incomplete list beats a complete hang; it
+  skips hidden trees, `node_modules`/`vendor`, and macOS home furniture,
+  and never descends past a repo root. Repos already holding loops sort
+  first (then by git activity). The picker skips the splash afterwards —
+  it was the branded moment — and exit hints from a picked repo are
+  prefixed with `cd <repo> &&` so the printed command works from where
+  the user actually is. With no repos found, the static front-door text
+  remains. The monitor itself still never selects repos: the picker only
+  runs when there is no repo at all.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

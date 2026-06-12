@@ -12,12 +12,15 @@ import (
 // `loopy`, dismissed by any key. Branding lives here and in the empty
 // state — never in the working frames.
 
+// logoArt is the pixel lemniscate: two textured loops whose inner walls
+// cross in an X at the center. ██ strokes, ░░ weave — the same two weights
+// everywhere the mark appears (README, splash, empty state, front door).
 var logoArt = []string{
-	"██░░██░░░░██░░██",
-	"██░░░░██████░░░░██",
-	"██░░░░██░░██░░░░██",
-	"██░░░░██████░░░░██",
-	"██░░██░░░░██░░██",
+	"  ████      ████",
+	"██░░░░██  ██░░░░██",
+	"██░░░░░░██░░░░░░██",
+	"██░░░░██  ██░░░░██",
+	"  ████      ████",
 }
 
 const logoTagline = "engineer loops, not prompts"
@@ -46,7 +49,7 @@ func FrontDoor(color bool, dir string) string {
 		b.WriteString(text(line) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(" " + dir + " is not a git repository — loops live inside one.\n\n")
+	b.WriteString(" " + abbrevHome(dir) + " is not a git repository — loops live inside one.\n\n")
 	b.WriteString(text(styled(color, sgrCyan, "   cd into the repo you want loops in, then run: loopy")) + "\n")
 	b.WriteString(text(styled(color, sgrDim, "   starting fresh? git init first — loopy sets up the rest")) + "\n")
 	b.WriteString("\n")

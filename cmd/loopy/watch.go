@@ -4,55 +4,67 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
+	"os/exec"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 	"github.com/mjbarefo/loopy/internal/tui"
 )
 
 // launchMonitor is bare `loopy`: the monitor with the welcome splash. It
-// works in an uninitialized repo — the empty state walks through setup.
+// works in an uninitialized repo — the empty state walks through setup —
+// and outside any repo it becomes the front door: pick a nearby repository
+// (or git-init in place) and flow straight into that repo's monitor.
 func launchMonitor() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
+	welcome := true
 	root, err := projectRoot(cwd)
 	if err != nil {
-		// Not a git repo: the monitor has nothing to watch. This is the
-		// front door, not a failure — show the identity and the next move,
-		// not the help wall. (Pipes never reach here; run() routes them to
-		// the help text before launchMonitor.)
-		fmt.Print(tui.FrontDoor(colorEnabled, displayDir(cwd)))
-		return nil
+		// Not a git repo: the monitor has nothing to watch — offer nearby
+		// repos instead of a dead end. (Pipes never reach here; run()
+		// routes them to the help text before launchMonitor.)
+		repos := loop.FindRepos(cwd)
+		if len(repos) == 0 {
+			fmt.Print(tui.FrontDoor(colorEnabled, cwd))
+			return nil
+		}
+		choice, initHere, err := tui.PickRepo(cwd, repos, colorEnabled)
+		if err != nil {
+			return err
+		}
+		switch {
+		case initHere:
+			// An explicit, labeled choice — never an accidental keypress.
+			if out, err := exec.Command("git", "init").CombinedOutput(); err != nil {
+				return fmt.Errorf("git init: %v\n%s", err, out)
+			}
+			fmt.Printf("initialized a git repository in %s\n", cwd)
+			root = cwd
+		case choice != "":
+			root = choice
+		default:
+			return nil // the user looked and left; that is an answer
+		}
+		welcome = false // the picker was the branded moment; skip the splash
 	}
 	hint, err := tui.Run(tui.Options{
 		Root:    root,
 		Color:   colorEnabled,
-		Welcome: true,
+		Welcome: welcome,
 	})
 	if err != nil {
 		return err
 	}
 	if hint != "" {
+		// The hint must work from where the user actually is.
+		if root != cwd {
+			hint = fmt.Sprintf("cd %s && %s", root, hint)
+		}
 		fmt.Printf("next: %s\n", hint)
 	}
 	return nil
-}
-
-// displayDir shortens the home directory to ~ for display.
-func displayDir(dir string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return dir
-	}
-	if dir == home {
-		return "~"
-	}
-	if rest, ok := strings.CutPrefix(dir, home+string(os.PathSeparator)); ok {
-		return "~" + string(os.PathSeparator) + rest
-	}
-	return dir
 }
 
 func handleWatch(cwd string, args []string) error {

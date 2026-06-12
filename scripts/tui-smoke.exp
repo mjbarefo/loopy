@@ -183,6 +183,28 @@ expect {
     timeout { fail "nogit: front door never offered the next move" }
 }
 expect eof
+
+# --- bare launch outside a repo, repos nearby: the picker ---------------------
+note "bare launch, not a git repo, repos nearby"
+exec sh -c "mkdir -p '$nogit/code/herdr' && cd '$nogit/code/herdr' && git init -q -b main"
+cd $nogit
+spawn $bin
+expect {
+    -ex "pick where loops should live" {}
+    timeout { fail "picker: chooser never appeared" }
+}
+expect {
+    -ex "herdr" {}
+    timeout { fail "picker: discovered repo missing from the list" }
+}
+send "\r"
+# Enter lands in the chosen repo's monitor; onboarding takes over.
+expect {
+    -ex "press i" {}
+    timeout { fail "picker: enter did not open the monitor's onboarding" }
+}
+send "q"
+expect eof
 cd $repo
 
 # --- a live loop: watch shows it running -------------------------------------

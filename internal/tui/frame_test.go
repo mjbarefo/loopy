@@ -292,6 +292,61 @@ func TestFrontDoor(t *testing.T) {
 	}
 }
 
+func TestRenderPicker(t *testing.T) {
+	s := pickerState{
+		width: 100, height: 30, start: "/tmp/nowhere",
+		repos: []loop.RepoCandidate{
+			{Path: "/tmp/projects/alpha", Loops: 3},
+			{Path: "/tmp/projects/beta"},
+		},
+		selected: 0,
+	}
+	frame := renderPicker(s)
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	if len(lines) != 30 {
+		t.Fatalf("picker frame has %d lines, want 30", len(lines))
+	}
+	for i, line := range lines {
+		if got := loop.DisplayWidth(line); got != 100 {
+			t.Errorf("picker line %d is %d columns, want 100: %q", i, got, line)
+		}
+	}
+	for _, want := range []string{
+		"engineer loops, not prompts",
+		"/tmp/nowhere is not a git repository",
+		"pick where loops should live:",
+		"▶ /tmp/projects/alpha",
+		"3 loop(s)",
+		"/tmp/projects/beta",
+		"enter opens the monitor in /tmp/projects/alpha",
+		"g git init here",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("picker missing %q\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "\x1b[") {
+		t.Error("color-off picker contains ANSI escapes")
+	}
+
+	// Short terminals drop the logo, never the list.
+	s.height = 12
+	frame = renderPicker(s)
+	if strings.Contains(frame, "██") {
+		t.Error("picker logo must yield to the list on short terminals")
+	}
+	if !strings.Contains(frame, "alpha") {
+		t.Error("short picker lost the repo list")
+	}
+
+	// Selection moves the accent.
+	s.height = 30
+	s.selected = 1
+	if frame := renderPicker(s); !strings.Contains(frame, "▶ /tmp/projects/beta") {
+		t.Error("cursor did not follow the selection")
+	}
+}
+
 func TestFrameNewLoopForm(t *testing.T) {
 	s := wideState()
 	s.form = formState{
