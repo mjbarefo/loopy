@@ -449,6 +449,9 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 		if len(s.broken) > 0 {
 			return brokenOnlyLines(s, width)
 		}
+		if len(s.loops) > 0 {
+			return quietStateLines(s, width)
+		}
 		return emptyStateLines(s, width, rows)
 	}
 	if s.showHelp {
@@ -761,6 +764,41 @@ func emptyStateLines(s frameState, width, rows int) []cell {
 		styled(s.color, sgrDim, " then watch it converge here. (? help · q quits)"),
 	)
 	return rowsOut
+}
+
+// quietStateLines is the rail at rest: every loop is decided, nothing needs
+// eyes. The newest accepted loop keeps its apply command on screen — the
+// human's next move (apply on a branch, commit, open the PR) must outlive
+// a three-second flash.
+func quietStateLines(s frameState, width int) []cell {
+	lines := []cell{
+		{},
+		joinCells(
+			styled(s.color, sgrBold, " all quiet"),
+			plainCell(" — every loop is decided"),
+		),
+		{},
+		joinCells(plainCell("   "), styled(s.color, sgrCyan, "n"), plainCell(" starts the next loop")),
+		joinCells(plainCell("   the history: "), styled(s.color, sgrCyan, "loopy logbook")),
+	}
+	var last *loop.LoopView
+	for i := range s.loops {
+		v := &s.loops[i]
+		if v.Status == loop.StatusAccepted && v.NextCommand != "" {
+			if last == nil || v.EndedAt > last.EndedAt {
+				last = v
+			}
+		}
+	}
+	if last != nil {
+		lines = append(lines,
+			cell{},
+			plainCell(loop.TruncateDisplay(fmt.Sprintf("   %s was accepted; its diff is durable — to ship it:", last.ID), width-1)),
+			joinCells(plainCell("     "), styled(s.color, sgrCyan, loop.TruncateDisplay(last.NextCommand, width-6))),
+			styled(s.color, sgrDim, "     on a branch, then commit and open your PR"),
+		)
+	}
+	return lines
 }
 
 func brokenOnlyLines(s frameState, width int) []cell {

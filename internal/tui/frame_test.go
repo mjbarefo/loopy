@@ -223,6 +223,33 @@ func TestFrameDecisionConfirmsInFooter(t *testing.T) {
 	}
 }
 
+// TestFrameQuietRail: every loop decided and nothing selected — the detail
+// pane says so and keeps the newest accepted loop's apply command visible.
+func TestFrameQuietRail(t *testing.T) {
+	s := wideState()
+	for i := range s.loops {
+		s.loops[i].Status = loop.StatusAccepted
+	}
+	s.loops[1].EndedAt = "2026-06-12T20:00:00Z"
+	s.loops[1].NextCommand = "git apply .loopy/loops/flaky-importer/final-diff.patch"
+	s.selected = -1
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{
+		"all quiet",
+		"starts the next loop",
+		"flaky-importer was accepted",
+		"git apply .loopy/loops/flaky-importer/final-diff.patch",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("quiet rail missing %q\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "no loops yet") {
+		t.Error("a quiet rail is not the onboarding empty state")
+	}
+}
+
 func TestFrameNoLoopsOnboarding(t *testing.T) {
 	// Uninitialized repo: the first step is executable in place.
 	s := frameState{width: 100, height: 24}
