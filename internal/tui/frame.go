@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 )
@@ -655,30 +656,255 @@ func runningVerb(v loop.LoopView) string {
 	}
 }
 
+// artifactBody renders the diff/verifier/live tabs answer-first: a header in
+// plain words (what changed, did it pass), then the raw evidence with per-line
+// styling. Every styled line keeps a non-color signal — the diff's +/- and the
+// log's === markers carry the meaning when color is off.
 func artifactBody(s frameState, width int) []cell {
 	art := s.art
 	if art.missing {
 		return []cell{styled(s.color, sgrDim, " nothing here yet ("+art.label+")")}
 	}
-	banner := " " + art.label
-	head := styled(s.color, sgrDim, loop.TruncateDisplay(banner, width))
-	if art.truncated {
-		shown := int64(0)
-		for _, l := range art.lines {
-			shown += int64(len(l)) + 1
-		}
-		banner += fmt.Sprintf(" · truncated: showing last %s of %s", loop.HumanBytes(int(shown)), loop.HumanBytes(int(art.size)))
-		// The facts stay dim; the glyph alone says "partial".
-		head = joinCells(
-			styled(s.color, sgrYellow, " !"),
-			styled(s.color, sgrDim, loop.TruncateDisplay(banner, width-2)),
-		)
+	var lines []cell
+	switch s.tab {
+	case tabDiff:
+		lines = append(lines, diffHeaderLines(s, width)...)
+	case tabVerifier:
+		lines = append(lines, verifierHeaderLines(s, width)...)
 	}
-	lines := []cell{head}
-	for _, l := range art.lines {
-		lines = append(lines, plainCell(" "+loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)))
+	lines = append(lines, artifactBanner(s, width))
+	switch s.tab {
+	case tabDiff:
+		for _, l := range art.lines {
+			lines = append(lines, diffLine(s, l, width))
+		}
+	case tabVerifier:
+		lines = append(lines, verifierLogLines(s, width)...)
+	default:
+		for _, l := range art.lines {
+			lines = append(lines, plainCell(" "+loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)))
+		}
 	}
 	return lines
+}
+
+// artifactBanner is the provenance line: which file, which iteration, and the
+// partial-load warning when the viewer cap cut the head off.
+func artifactBanner(s frameState, width int) cell {
+	art := s.art
+	banner := " " + art.label
+	if !art.truncated {
+		return styled(s.color, sgrDim, loop.TruncateDisplay(banner, width))
+	}
+	shown := int64(0)
+	for _, l := range art.lines {
+		shown += int64(len(l)) + 1
+	}
+	banner += fmt.Sprintf(" · truncated: showing last %s of %s", loop.HumanBytes(int(shown)), loop.HumanBytes(int(art.size)))
+	// The facts stay dim; the glyph alone says "partial".
+	return joinCells(
+		styled(s.color, sgrYellow, " !"),
+		styled(s.color, sgrDim, loop.TruncateDisplay(banner, width-2)),
+	)
+}
+
+// diffHeaderLines answers "what changed" before the patch: a one-line total,
+// then one line per file with a kind glyph and plain words. A truncated patch
+// gets no header — counting only the visible tail would lie, and the banner
+// already says the load is partial.
+func diffHeaderLines(s frameState, width int) []cell {
+	if s.art.truncated {
+		return nil
+	}
+	files := loop.ParseDiff(s.art.lines)
+	if len(files) == 0 {
+		return nil
+	}
+	adds, dels := 0, 0
+	for _, f := range files {
+		adds += f.Adds
+		dels += f.Dels
+	}
+	word := "files"
+	if len(files) == 1 {
+		word = "file"
+	}
+	summary := fmt.Sprintf(" %d %s changed", len(files), word)
+	if c := diffCounts(adds, dels); c != "" {
+		summary += " · " + c
+	}
+	lines := []cell{styled(s.color, sgrBold, loop.TruncateDisplay(summary, width))}
+	for _, f := range files {
+		glyph, sgr := fileKindGlyph(f.Kind)
+		facts := f.Kind
+		switch {
+		case f.Binary:
+			facts += " · binary"
+		case diffCounts(f.Adds, f.Dels) != "":
+			facts += " · " + diffCounts(f.Adds, f.Dels)
+		}
+		lines = append(lines, joinCells(
+			plainCell(" "),
+			styled(s.color, sgr, glyph),
+			plainCell(" "+loop.TruncateDisplay(f.Path, width-4)),
+			styled(s.color, sgrDim, "  "+facts),
+		))
+	}
+	return append(lines, cell{})
+}
+
+// diffCounts renders "+A -D" with zero parts omitted; empty when nothing
+// was counted (binary files, pure renames).
+func diffCounts(adds, dels int) string {
+	switch {
+	case adds > 0 && dels > 0:
+		return fmt.Sprintf("+%d -%d", adds, dels)
+	case adds > 0:
+		return fmt.Sprintf("+%d", adds)
+	case dels > 0:
+		return fmt.Sprintf("-%d", dels)
+	}
+	return ""
+}
+
+// fileKindGlyph pairs each file kind with a glyph and a color; the kind word
+// follows in plain text, so color is never the only signal.
+func fileKindGlyph(kind string) (glyph, sgr string) {
+	switch kind {
+	case "new file":
+		return "+", sgrGreen
+	case "deleted":
+		return "-", sgrRed
+	case "renamed":
+		return "→", sgrCyan
+	default:
+		return "~", sgrYellow
+	}
+}
+
+// diffLine styles one patch line: file headers bold, hunk markers dim cyan,
+// adds green, removals red, context plain. The classification is stateless,
+// so a tail-truncated patch starting mid-hunk still reads.
+func diffLine(s frameState, l string, width int) cell {
+	t := " " + loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)
+	switch {
+	case strings.HasPrefix(l, "diff --git "),
+		strings.HasPrefix(l, "+++ "),
+		strings.HasPrefix(l, "--- "):
+		return styled(s.color, sgrBold, t)
+	case strings.HasPrefix(l, "@@"):
+		return styled(s.color, sgrDim+";"+sgrCyan, t)
+	case strings.HasPrefix(l, "+"):
+		return styled(s.color, sgrGreen, t)
+	case strings.HasPrefix(l, "-"):
+		return styled(s.color, sgrRed, t)
+	}
+	return plainCell(t)
+}
+
+// artifactIteration finds the iteration record the loaded artifact belongs
+// to; nil when the artifact carries no iteration or the record is gone.
+func artifactIteration(s frameState) *loop.IterationView {
+	if s.art.iter < 0 || s.selected < 0 || s.selected >= len(s.loops) {
+		return nil
+	}
+	for i := range s.loops[s.selected].Iterations {
+		if it := &s.loops[s.selected].Iterations[i]; it.Index == s.art.iter {
+			return it
+		}
+	}
+	return nil
+}
+
+// verifierHeaderLines answers "did it pass" before the log: one scoreboard
+// row per stage and a plain-words verdict. Stages the run never reached
+// (the verifier short-circuits) say so.
+func verifierHeaderLines(s frameState, width int) []cell {
+	it := artifactIteration(s)
+	if it == nil {
+		return nil
+	}
+	stages := s.loops[s.selected].Verifier
+	var lines []cell
+	nameW := 0
+	for _, st := range stages {
+		if w := loop.DisplayWidth(st.Name); w > nameW {
+			nameW = w
+		}
+	}
+	for i, st := range stages {
+		if i >= len(it.Stages) {
+			lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(
+				" · "+loop.PadDisplay(st.Name, nameW)+"  "+st.Cmd+"  did not run", width)))
+			continue
+		}
+		r := it.Stages[i]
+		glyph, sgr := "✓", sgrGreen
+		if r.ExitCode != 0 {
+			glyph, sgr = "✗", sgrRed
+		}
+		lines = append(lines, joinCells(
+			plainCell(" "),
+			styled(s.color, sgr, glyph),
+			plainCell(" "+loop.PadDisplay(st.Name, nameW)),
+			plainCell("  "+loop.TruncateDisplay(st.Cmd, width-nameW-12)),
+			styled(s.color, sgrDim, "  ("+loop.HumanDuration(time.Duration(r.DurationMS)*time.Millisecond)+")"),
+		))
+	}
+	if it.Green {
+		lines = append(lines, joinCells(
+			plainCell(" "),
+			styled(s.color, sgrGreen, "✓"),
+			plainCell(" green: the goal is met"),
+		))
+	} else {
+		verdict := "red: the verifier failed — the log below shows why"
+		if it.FailingStage != "" {
+			verdict = fmt.Sprintf("red: stage %s failed — the log below shows why", it.FailingStage)
+		}
+		lines = append(lines, joinCells(
+			plainCell(" "),
+			styled(s.color, sgrRed, "✗"),
+			plainCell(" "+loop.TruncateDisplay(verdict, width-3)),
+		))
+	}
+	return append(lines, cell{})
+}
+
+// verifierLogLines styles the log so the answer pops: "=== stage" markers are
+// dim dividers, and on a red run the passing stages' output dims so the
+// failing stage's lines read bright. A green run stays plain throughout.
+func verifierLogLines(s frameState, width int) []cell {
+	failing := ""
+	if it := artifactIteration(s); it != nil && !it.Green {
+		failing = it.FailingStage
+	}
+	cur := ""
+	var lines []cell
+	for _, l := range s.art.lines {
+		t := " " + loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)
+		if name, ok := stageMarkerName(l); ok {
+			cur = name
+			lines = append(lines, styled(s.color, sgrDim, t))
+			continue
+		}
+		if failing != "" && cur != "" && cur != failing {
+			lines = append(lines, styled(s.color, sgrDim, t))
+			continue
+		}
+		lines = append(lines, plainCell(t))
+	}
+	return lines
+}
+
+// stageMarkerName parses the verifier runner's "=== stage <name>: …" lines.
+func stageMarkerName(l string) (string, bool) {
+	rest, ok := strings.CutPrefix(l, "=== stage ")
+	if !ok {
+		return "", false
+	}
+	name, _, ok := strings.Cut(rest, ":")
+	return name, ok
 }
 
 // emptyStateLines is first-run onboarding: the one place the mascot lives in

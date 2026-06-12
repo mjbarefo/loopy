@@ -216,7 +216,12 @@ func nextVisible(loops []loop.LoopView, from, delta int) int {
 
 func (m *model) setTab(t tabID) {
 	m.tab = t
+	// Live (and the overview's tail) follow the tail; the diff and verifier
+	// tabs lead with their answer-first header, so they open at the top.
 	m.scroll = -1
+	if t == tabDiff || t == tabVerifier {
+		m.scroll = 0
+	}
 	m.reload()
 }
 
@@ -830,6 +835,7 @@ func (m model) wizardAdvance() (tea.Model, tea.Cmd) {
 		m.form = formState{}
 		m.selectedID = ids[0]
 		m.tab = tabOverview
+		m.scroll = -1
 		if len(ids) > 1 {
 			m.say("racing %d loops — when all park: loopy judge %s", len(ids), strings.Join(ids, " "))
 		} else {

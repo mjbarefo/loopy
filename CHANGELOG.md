@@ -10,6 +10,15 @@ Homebrew tap.
 
 ### Added
 
+- Monitor: the diff and verifier tabs answer first, evidence below. The
+  diff tab opens with "N files changed · +A -D" and a per-file list before
+  the patch (adds green, removals red, headers bold); the verifier tab
+  opens with a per-stage ✓/✗ scoreboard and a plain-words verdict before
+  the log, where stage markers recede and — on a red run — passing stages'
+  output dims so the failure reads. Both tabs open at the top; `G` still
+  jumps to the tail. Readable without color: glyphs and words carry every
+  verdict.
+
 - The reviewer agent: `loopy run --reviewer <name>` runs a *different*
   registered agent against the green diff before parking; its critique is
   recorded as `critique.md` and shown by `loopy review` — evidence, never a

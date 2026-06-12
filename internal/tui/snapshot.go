@@ -32,6 +32,7 @@ var tabNames = [tabCount]string{"overview", "live", "diff", "verifier"}
 // evidence file.
 type artifact struct {
 	label     string // e.g. "iter 3 · agent.log"
+	iter      int    // which iteration the file belongs to; -1 when unknown
 	lines     []string
 	truncated bool
 	size      int64
@@ -61,14 +62,14 @@ func loadLoops(root string) ([]loop.LoopView, []loop.BrokenLoop, error) {
 func loadArtifact(label, path string) artifact {
 	data, truncated, size, err := loop.TailFile(path, loop.ViewerCapBytes)
 	if err != nil {
-		return artifact{label: label, missing: true}
+		return artifact{label: label, iter: -1, missing: true}
 	}
 	text := strings.TrimRight(string(data), "\n")
 	var lines []string
 	if text != "" {
 		lines = strings.Split(text, "\n")
 	}
-	return artifact{label: label, lines: lines, truncated: truncated, size: size}
+	return artifact{label: label, iter: -1, lines: lines, truncated: truncated, size: size}
 }
 
 // currentIterationIndex is the iteration the engine is working on now: one
@@ -135,10 +136,12 @@ func latestArtifact(root string, v loop.LoopView, name string) artifact {
 	for idx := currentIterationIndex(root, v); idx >= 0; idx-- {
 		path := filepath.Join(loop.IterationDir(root, v.ID, idx), name)
 		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-			return loadArtifact(fmt.Sprintf("iter %d · %s", idx, name), path)
+			a := loadArtifact(fmt.Sprintf("iter %d · %s", idx, name), path)
+			a.iter = idx
+			return a
 		}
 	}
-	return artifact{label: name, missing: true}
+	return artifact{label: name, iter: -1, missing: true}
 }
 
 // loadTabArtifact returns the artifact behind the given tab for one loop.
