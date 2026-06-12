@@ -129,35 +129,6 @@ func liveArtifact(root string, v loop.LoopView) artifact {
 	return loadArtifact(label, path)
 }
 
-// The fleet re-reads every live loop's tail twice a second, so it reads the
-// last few KiB, not the viewer cap.
-const fleetTailCapBytes = 8 * 1024
-
-// fleetTailLines is how many tail lines each live strip shows.
-const fleetTailLines = 2
-
-// liveTailLines is the fleet's bounded tail: the last maxLines lines of the
-// log the live engine is writing.
-func liveTailLines(root string, v loop.LoopView, maxLines int) []string {
-	path, _, ok := liveLogPath(root, v)
-	if !ok {
-		return nil
-	}
-	data, _, _, err := loop.TailFile(path, fleetTailCapBytes)
-	if err != nil {
-		return nil
-	}
-	text := strings.TrimRight(string(data), "\n")
-	if text == "" {
-		return nil
-	}
-	lines := strings.Split(text, "\n")
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	return lines
-}
-
 // latestArtifact scans backwards from the current iteration for the newest
 // existing copy of one evidence file (diff.patch, verifier.log).
 func latestArtifact(root string, v loop.LoopView, name string) artifact {

@@ -14,10 +14,8 @@ Homebrew tap.
   registered agent against the green diff before parking; its critique is
   recorded as `critique.md` and shown by `loopy review` — evidence, never a
   gate. Any change the reviewer makes to the worktree is reverted.
-- The fleet view: with several loops, browsing the monitor shows every loop
-  as a live strip — status, per-iteration verdict run, verifier stage meter,
-  and a short live tail — with enter/esc moving between the fleet and one
-  loop's full detail. `watch --once` is unchanged.
+- Monitor: decided (accepted/rejected) loops leave the rail — the header
+  count and the logbook keep the history; `loopy watch <id>` still pins one.
 - `loopy run --json` and `loopy resume --json`: progress as an NDJSON event
   stream for scripts and outer orchestrators, ending in a `result` event
   that carries the full loop view (`--race` interleaves all loops on one
