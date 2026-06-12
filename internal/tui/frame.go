@@ -75,6 +75,8 @@ type frameState struct {
 	phaseElapsed  string
 	confirmAbort  bool
 	confirmDelete bool
+	confirmAccept bool
+	confirmReject bool
 	flash         string
 	showHelp      bool
 	loadErr       string
@@ -782,8 +784,8 @@ func helpLines(s frameState) []cell {
 		{"g / G", "jump to top / follow the tail"},
 		{"pgup/pgdn", "page through the body"},
 		{"p", "pause at the next iteration boundary"},
-		{"r", "resume a paused loop (spawns the engine)"},
-		{"a", "abort (asks for confirmation)"},
+		{"r", "resume a paused loop · reject a parked one (confirms)"},
+		{"a", "abort a moving loop · accept a green one (confirms)"},
 		{"d", "delete the loop and its evidence (asks for confirmation)"},
 		{"o", "quit and print the next command"},
 		{"q", "quit"},
@@ -798,8 +800,8 @@ func helpLines(s frameState) []cell {
 	for _, note := range []string{
 		"",
 		" the monitor never writes loop state; controls go through",
-		" control.json and the engine honors them at phase boundaries.",
-		" accept and reject stay in the CLI: loopy review <id>.",
+		" control.json, decisions through the audited CLI.",
+		" accepting a non-green loop stays there: loopy accept --override.",
 	} {
 		lines = append(lines, styled(s.color, sgrDim, note))
 	}
@@ -831,6 +833,18 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 			plainCell(margin),
 			styled(s.color, sgrRed, "✗"),
 			plainCell(loop.TruncateDisplay(fmt.Sprintf(" delete %s? all its evidence is removed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+		)
+	case s.confirmAccept && sel != nil:
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrGreen, "✓"),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" accept %s? the decision is recorded — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+		)
+	case s.confirmReject && sel != nil:
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrRed, "✗"),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" reject %s? evidence kept, worktree freed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
 		)
 	case s.flash != "":
 		return joinCells(

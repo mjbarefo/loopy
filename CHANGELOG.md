@@ -20,6 +20,11 @@ Homebrew tap.
   refused.
 - Monitor: decided (accepted/rejected) loops leave the rail — the header
   count and the logbook keep the history; `loopy watch <id>` still pins one.
+- Monitor: accept and reject without leaving the TUI. The keys are
+  contextual — `a` aborts a moving loop and accepts a parked green one,
+  `r` resumes a paused loop and rejects a parked one — each behind the same
+  y/n confirmation as delete, shelling out to the audited CLI. Accepting a
+  non-green loop remains CLI-only (`loopy accept --override --reason`).
 - `loopy run --json` and `loopy resume --json`: progress as an NDJSON event
   stream for scripts and outer orchestrators, ending in a `result` event
   that carries the full loop view (`--race` interleaves all loops on one

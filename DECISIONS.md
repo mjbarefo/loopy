@@ -529,6 +529,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   itself. No `--force`, no flags: the confirmation lives in the monitor,
   and the CLI command is named like what it does.
 
+- **2026-06-12 — Accept and reject from the monitor, on contextual keys.**
+  The monitor was built with "judging stays in the CLI" (a code-comment-level
+  stance, never argued here). Giving the monitor `d` broke that position:
+  deleting evidence is strictly more consequential than recording a
+  decision, and the monitor already renders the full review surface (diff,
+  verifier, history). The owner asked why judging needed a shell round-trip;
+  no good answer existed. The calls: **no new keys** — the verbs follow the
+  loop's state. `a` is abort while a loop moves, accept once it parks green;
+  `r` is resume for a paused loop, reject for a parked one (green or red).
+  Every decision goes through the same y/n confirm footer as delete, which
+  names the verb — a mispress is caught by reading. Both shell out to the
+  audited CLI (`loopy accept` / `loopy reject`), the delete precedent.
+  Accepting a *non-green* loop stays CLI-only: `--override --reason` is a
+  deliberate, recorded act and deserves the deliberate path.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -210,6 +210,19 @@ func TestFrameAbortConfirmInFooter(t *testing.T) {
 	}
 }
 
+func TestFrameDecisionConfirmsInFooter(t *testing.T) {
+	s := wideState()
+	s.confirmAccept = true
+	if frame := renderFrame(s); !strings.Contains(frame, "accept fix-csv-quoting? the decision is recorded") {
+		t.Error("footer should ask for accept confirmation")
+	}
+	s.confirmAccept = false
+	s.confirmReject = true
+	if frame := renderFrame(s); !strings.Contains(frame, "reject fix-csv-quoting? evidence kept, worktree freed") {
+		t.Error("footer should ask for reject confirmation")
+	}
+}
+
 func TestFrameNoLoopsOnboarding(t *testing.T) {
 	// Uninitialized repo: the first step is executable in place.
 	s := frameState{width: 100, height: 24}

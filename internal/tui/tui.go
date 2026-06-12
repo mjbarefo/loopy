@@ -73,15 +73,15 @@ func RenderOnce(root, loopID string) (string, error) {
 	return renderFrame(s), nil
 }
 
-// runDelete runs `loopy delete <id>` synchronously — deletion is fast, and
-// the monitor wants the verdict for its flash. The CLI is the actor; the
-// monitor still writes no loop state itself.
-func runDelete(root, loopID string) (string, error) {
+// runCLI runs an audited loopy command (`delete`, `accept`, `reject`)
+// synchronously — these are fast, and the monitor wants the verdict for its
+// flash. The CLI is the actor; the monitor still writes no loop state itself.
+func runCLI(root string, args ...string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(exe, "delete", loopID)
+	cmd := exec.Command(exe, args...)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	return string(out), err
