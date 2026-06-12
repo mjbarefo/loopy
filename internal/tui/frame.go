@@ -73,6 +73,7 @@ type frameState struct {
 	// elapsed strings are precomputed by the model (they need a clock; the
 	// renderer must stay pure and deterministic).
 	phaseElapsed  string
+	synthElapsed  string
 	confirmAbort  bool
 	confirmDelete bool
 	confirmAccept bool

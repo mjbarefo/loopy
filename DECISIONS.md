@@ -602,6 +602,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   Wizard integration deferred — the form needs a spinner for a 1–3 minute
   agent call; the CLI path proves the shape first.
 
+- **2026-06-12 — Synthesis in the wizard: tab proposes, enter signs.** The
+  owner's bar, restated after the CLI rung shipped: *only run `loopy`* —
+  the whole flow lives in the monitor, so a flag-only feature isn't done.
+  The calls: on the wizard's verifier step, **tab** asks the selected agent
+  to propose the verifier (an async tea.Cmd; the monitor keeps breathing
+  and shows "asking <agent>… Ns"). The proposal lands **in the same
+  editable field**, attributed ("proposed by claude — edit freely; enter is
+  your sign-off"), already-green proposals flagged in the flash. Typing and
+  enter are parked while the agent thinks; esc cancels in place, and a late
+  result is dropped by sequence number. A synthesized verifier arrives
+  marked edited, so it is never stored as the project default — same
+  contract as `--verify auto`. Tab was free on that step (budget's
+  field-switcher is a different step), and a proposal you must read sits in
+  an input you can edit — no separate accept screen.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -55,6 +55,14 @@ type formState struct {
 	inferSource   string // non-empty when the prefill was inferred
 	edited        bool
 
+	// Synthesis: tab on the verifier step asks the selected agent to propose
+	// a goal-testing command (async — the monitor keeps breathing). The
+	// result lands in the editable field; enter stays the human's signature.
+	synthesizing bool
+	synthStarted time.Time
+	synthSeq     int    // stale results (after esc) are dropped by sequence
+	proposedBy   string // agent that proposed the current verifier text
+
 	// Budget fields as text, validated when the step advances.
 	iters       string
 	wall        string
@@ -302,8 +310,26 @@ func agentLines(s frameState, width int) []cell {
 
 func verifierLines(s frameState, width int) []cell {
 	f := s.form
+	agent := "the agent"
+	if picked := f.selectedAgents(); len(picked) > 0 {
+		agent = picked[0]
+	}
+	if f.synthesizing {
+		return []cell{
+			joinCells(
+				styled(s.color, sgrCyan, "◌ "),
+				plainCell(loop.TruncateDisplay(fmt.Sprintf("asking %s to propose a verifier… %s", agent, s.synthElapsed), width-2)),
+			),
+			{},
+			styled(s.color, sgrDim, "the agent explores the repo in a throwaway worktree — a minute or two."),
+			{},
+			affordance(s, "esc cancels the proposal and goes back"),
+		}
+	}
 	source := "type the command that proves the goal is met"
 	switch {
+	case f.proposedBy != "" && f.verifier != "":
+		source = "proposed by " + f.proposedBy + " — edit freely; enter is your sign-off"
 	case f.edited:
 		source = "edited — used as a single stage for this loop"
 	case f.stored:
@@ -317,7 +343,7 @@ func verifierLines(s frameState, width int) []cell {
 		{},
 		styled(s.color, sgrDim, "this command decides green: exit 0 means the goal is met."),
 		{},
-		affordance(s, "enter continues · esc goes back"),
+		affordance(s, "tab asks "+agent+" to propose one · enter continues · esc goes back"),
 	}
 }
 
