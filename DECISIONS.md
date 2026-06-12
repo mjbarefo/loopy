@@ -584,6 +584,24 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   green loop today; without it every loop worktree is an untrusted
   directory and gemini refuses to work.
 
+- **2026-06-12 — `--verify auto`: the agent proposes the verifier, the human
+  still signs it.** The owner's direction: running a loop should lean on the
+  frontier models, not on hand-written shell — the `make check` default is
+  green-at-baseline for any goal the project gate doesn't test (file moves,
+  docs), and the loop no-ops. The calls: synthesis is *the registered agent*
+  run once in a **throwaway detached worktree** (invariant 4 holds — loopy
+  makes no model calls of its own; and a --yolo agent can scribble there
+  without touching the checkout). The proposal is the agent's final output
+  line (fences/`$ `/backticks stripped), is **trial-run in the same
+  worktree** — red is the desired verdict; an already-green proposal is
+  flagged before any budget is spent — and is **confirmed on a TTY before
+  use, never stored as the project default** (it is goal-specific; inference
+  keeps owning the stored default). Fails closed without a TTY, same rule as
+  inference. `--verify auto` stands alone rather than mixing with hand
+  stages: the prompt tells the agent to chain the project gate itself.
+  Wizard integration deferred — the form needs a spinner for a 1–3 minute
+  agent call; the CLI path proves the shape first.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
