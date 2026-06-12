@@ -514,6 +514,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   per-loop tail loader and the prototype lesson — herdr's "everything
   breathing" translates to loopy as a *denser rail*, not a second list.
 
+- **2026-06-12 — `loopy delete <id>`, and `d` in the monitor.** The owner
+  asked where loop deletion was; it didn't exist — reject freed the
+  worktree but the evidence record lived forever, and test loops piled up.
+  The calls: deletion removes the worktree, the branch, and the whole
+  `loops/<id>/` directory, but **the logbook keeps one narrative line**
+  ("deleted — goal, status") so the project still remembers that evidence
+  was discarded (`logbook --json` loses the entry — it aggregates the
+  deleted review.json — and that's the honest trade). A live engine is
+  refused (abort first); unreadable loop state IS deletable — `delete` is
+  the cleanup path when repair isn't worth it. In the monitor, `d` asks
+  for y/n confirmation and then shells out to `loopy delete` — the resume
+  precedent: the CLI is the actor, the monitor still writes no loop state
+  itself. No `--force`, no flags: the confirmation lives in the monitor,
+  and the CLI command is named like what it does.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

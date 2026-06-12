@@ -73,6 +73,20 @@ func RenderOnce(root, loopID string) (string, error) {
 	return renderFrame(s), nil
 }
 
+// runDelete runs `loopy delete <id>` synchronously — deletion is fast, and
+// the monitor wants the verdict for its flash. The CLI is the actor; the
+// monitor still writes no loop state itself.
+func runDelete(root, loopID string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command(exe, "delete", loopID)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // spawnResume starts a detached `loopy resume <id>` engine. The monitor
 // itself never writes loop state — the child is a normal engine process with
 // the usual lock; its plain progress stream is redundant with the state

@@ -72,11 +72,12 @@ type frameState struct {
 	art         artifact
 	// elapsed strings are precomputed by the model (they need a clock; the
 	// renderer must stay pure and deterministic).
-	phaseElapsed string
-	confirmAbort bool
-	flash        string
-	showHelp     bool
-	loadErr      string
+	phaseElapsed  string
+	confirmAbort  bool
+	confirmDelete bool
+	flash         string
+	showHelp      bool
+	loadErr       string
 }
 
 // cell is a piece of text with an optional styled form; layout always
@@ -783,6 +784,7 @@ func helpLines(s frameState) []cell {
 		{"p", "pause at the next iteration boundary"},
 		{"r", "resume a paused loop (spawns the engine)"},
 		{"a", "abort (asks for confirmation)"},
+		{"d", "delete the loop and its evidence (asks for confirmation)"},
 		{"o", "quit and print the next command"},
 		{"q", "quit"},
 	}
@@ -823,6 +825,12 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 			plainCell(margin),
 			styled(s.color, sgrRed, "✗"),
 			plainCell(loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+		)
+	case s.confirmDelete && sel != nil:
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrRed, "✗"),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" delete %s? all its evidence is removed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
 		)
 	case s.flash != "":
 		return joinCells(

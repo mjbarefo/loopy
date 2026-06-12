@@ -14,6 +14,10 @@ Homebrew tap.
   registered agent against the green diff before parking; its critique is
   recorded as `critique.md` and shown by `loopy review` — evidence, never a
   gate. Any change the reviewer makes to the worktree is reverted.
+- `loopy delete <loop-id>` removes a loop entirely — worktree, branch, and
+  evidence — while the logbook keeps one line recording the deletion. The
+  monitor's `d` key confirms and calls it; loops with a live engine are
+  refused.
 - Monitor: decided (accepted/rejected) loops leave the rail — the header
   count and the logbook keep the history; `loopy watch <id>` still pins one.
 - `loopy run --json` and `loopy resume --json`: progress as an NDJSON event

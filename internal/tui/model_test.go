@@ -160,3 +160,29 @@ func TestSelectSkipsDecided(t *testing.T) {
 		t.Fatalf("with only decided loops below, selection should stay, got %d", got)
 	}
 }
+
+// TestDeleteKeyConfirms: d arms the confirmation; live loops are refused;
+// n cancels without touching anything.
+func TestDeleteKeyConfirms(t *testing.T) {
+	m := model{loops: sampleLoops(), selected: 1} // parked loop
+	res, _ := m.handleKey(press('d', "d"))
+	m = res.(model)
+	if !m.confirmDelete {
+		t.Fatal("d on a parked loop should ask for confirmation")
+	}
+	res, _ = m.handleKey(press('n', "n"))
+	m = res.(model)
+	if m.confirmDelete || m.flash == "" {
+		t.Fatal("n should cancel and say so")
+	}
+
+	m = model{loops: sampleLoops(), selected: 0} // live loop
+	res, _ = m.handleKey(press('d', "d"))
+	m = res.(model)
+	if m.confirmDelete {
+		t.Fatal("a live loop must not be deletable from the monitor")
+	}
+	if m.flash == "" {
+		t.Fatal("the refusal should say what to do instead")
+	}
+}

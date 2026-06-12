@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mjbarefo/loopy/internal/loop"
 )
@@ -274,6 +275,31 @@ func parseJSONFlag(cmd string, args []string) (bool, error) {
 		}
 	}
 	return asJSON, nil
+}
+
+// handleDelete removes a loop and its evidence. Destructive on purpose and
+// named like it; the monitor's d key confirms before calling this.
+func handleDelete(cwd string, args []string) error {
+	loopID, rest := splitLeadingID(args)
+	if loopID == "" && len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		loopID = rest[0]
+	}
+	if loopID == "" {
+		return usagef("usage: loopy delete <loop-id>")
+	}
+	root, err := projectRoot(cwd)
+	if err != nil {
+		return err
+	}
+	if err := loop.EnsureInitialized(root); err != nil {
+		return err
+	}
+	l, err := loop.DeleteLoop(root, loopID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("deleted loop %s (%s) — worktree, branch, and evidence removed; the logbook keeps the record\n", l.ID, l.Status)
+	return nil
 }
 
 func printJSON(v any) error {
