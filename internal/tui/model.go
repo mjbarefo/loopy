@@ -36,9 +36,6 @@ type model struct {
 	selected   int
 	selectedID string // selection is sticky by ID across reloads
 	loadErr    string
-	// tails carries every live loop's short log tail for the fleet view,
-	// reloaded with everything else each tick.
-	tails map[string][]string
 
 	welcome          bool
 	initialized      bool
@@ -131,8 +128,14 @@ func (m *model) reload() {
 		return
 	}
 	// Re-find the sticky selection; default to the top of the rail — the
-	// loop that most needs eyes.
+	// first loop that needs eyes (decided history is hidden there).
 	m.selected = 0
+	for i, v := range m.loops {
+		if railVisible(v) {
+			m.selected = i
+			break
+		}
+	}
 	for i, v := range m.loops {
 		if v.ID == m.selectedID {
 			m.selected = i
@@ -141,15 +144,6 @@ func (m *model) reload() {
 	}
 	m.selectedID = m.loops[m.selected].ID
 	m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
-	tails := map[string][]string{}
-	for _, v := range m.loops {
-		if v.Live {
-			if t := liveTailLines(m.root, v, fleetTailLines); len(t) > 0 {
-				tails[v.ID] = t
-			}
-		}
-	}
-	m.tails = tails
 	if m.flash != "" && time.Now().After(m.flashUntil) {
 		m.flash = ""
 	}
@@ -159,10 +153,32 @@ func (m *model) selectLoop(delta int) {
 	if len(m.loops) == 0 {
 		return
 	}
-	m.selected = clamp(m.selected+delta, 0, len(m.loops)-1)
+	m.selected = nextVisible(m.loops, m.selected, delta)
 	m.selectedID = m.loops[m.selected].ID
 	m.scroll = -1
 	m.reload()
+}
+
+// nextVisible moves the selection delta steps over rail-visible loops —
+// decided history is skipped, matching what the rail renders.
+func nextVisible(loops []loop.LoopView, from, delta int) int {
+	step := 1
+	if delta < 0 {
+		step = -1
+		delta = -delta
+	}
+	idx := from
+	for n := delta; n > 0; n-- {
+		j := idx + step
+		for j >= 0 && j < len(loops) && !railVisible(loops[j]) {
+			j += step
+		}
+		if j < 0 || j >= len(loops) {
+			break
+		}
+		idx = j
+	}
+	return idx
 }
 
 func (m *model) setTab(t tabID) {
@@ -174,12 +190,6 @@ func (m *model) setTab(t tabID) {
 func (m *model) say(format string, args ...any) {
 	m.flash = fmt.Sprintf(format, args...)
 	m.flashUntil = time.Now().Add(flashDuration)
-}
-
-// fleetBrowse mirrors frameState.fleetActive for key handling: the user is
-// browsing the fleet, not a single loop's body.
-func (m model) fleetBrowse() bool {
-	return !m.focusDetail && len(m.loops) >= 2
 }
 
 func (m model) current() *loop.LoopView {
@@ -263,52 +273,25 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "pgup":
-		if m.fleetBrowse() {
-			m.selectLoop(-3)
-		} else {
-			m.scrollBy(-m.bodyRows())
-		}
+		m.scrollBy(-m.bodyRows())
 		return m, nil
 	case "pgdown":
-		if m.fleetBrowse() {
-			m.selectLoop(3)
-		} else {
-			m.scrollBy(m.bodyRows())
-		}
+		m.scrollBy(m.bodyRows())
 		return m, nil
 	case "g", "home":
-		if m.fleetBrowse() {
-			m.selectLoop(-len(m.loops))
-		} else {
-			m.scroll = 0
-		}
+		m.scroll = 0
 		return m, nil
 	case "G", "shift+g", "end":
-		if m.fleetBrowse() {
-			m.selectLoop(len(m.loops))
-		} else {
-			m.scroll = -1
-		}
+		m.scroll = -1
 		return m, nil
 	case "tab":
-		// From the fleet, the first tab press opens the selected loop's
-		// detail at its current view; further presses cycle the views.
-		if m.fleetBrowse() {
-			m.focusDetail = true
-			return m, nil
-		}
 		m.setTab((m.tab + 1) % tabCount)
 		return m, nil
 	case "shift+tab":
-		if m.fleetBrowse() {
-			m.focusDetail = true
-			return m, nil
-		}
 		m.setTab((m.tab + tabCount - 1) % tabCount)
 		return m, nil
 	case "1", "2", "3", "4":
 		if m.current() != nil {
-			m.focusDetail = true // a view key always lands in the detail
 			m.setTab(tabID(key[0] - '1'))
 			return m, nil
 		}
@@ -498,22 +481,13 @@ func (m model) frameState() frameState {
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
 	}
-	// The elapsed clocks are the model's: the renderer stays deterministic.
-	// The selected loop's drives the activity line; the per-loop map drives
-	// the fleet strips.
-	s.tails = m.tails
-	s.elapsedByID = map[string]string{}
-	for _, v := range m.loops {
-		if v.Live && v.PhaseStartedAt != "" {
-			if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
-				if d := time.Since(started); d > 0 {
-					s.elapsedByID[v.ID] = d.Round(time.Second).String()
-				}
+	// The elapsed clock is the model's: the renderer stays deterministic.
+	if v := m.current(); v != nil && v.Live && v.PhaseStartedAt != "" {
+		if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
+			if d := time.Since(started); d > 0 {
+				s.phaseElapsed = d.Round(time.Second).String()
 			}
 		}
-	}
-	if v := m.current(); v != nil {
-		s.phaseElapsed = s.elapsedByID[v.ID]
 	}
 	return s
 }

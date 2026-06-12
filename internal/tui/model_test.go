@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/mjbarefo/loopy/internal/loop"
 )
 
 func press(code rune, text string) tea.KeyPressMsg {
@@ -136,28 +138,25 @@ func TestWizardWalksTheSteps(t *testing.T) {
 	}
 }
 
-// TestFleetKeysOpenDetail: from the fleet, view keys land in the detail —
-// the first tab opens it, digits open it on the named view.
-func TestFleetKeysOpenDetail(t *testing.T) {
-	m := model{loops: sampleLoops()}
-	res, _ := m.handleKey(press(tea.KeyTab, ""))
-	m = res.(model)
-	if !m.focusDetail {
-		t.Fatal("tab from the fleet should open the selected loop's detail")
-	}
-	if m.tab != tabOverview {
-		t.Fatalf("the first tab press should not advance the view, got tab %d", m.tab)
-	}
-	res, _ = m.handleKey(press(tea.KeyTab, ""))
-	m = res.(model)
-	if m.tab != tabLive {
-		t.Fatalf("tab inside the detail should cycle views, got tab %d", m.tab)
-	}
+// TestSelectSkipsDecided: selection moves over the rail's visible loops
+// only — decided history is skipped in both directions, and a wall of
+// decided loops at the edge doesn't strand the cursor.
+func TestSelectSkipsDecided(t *testing.T) {
+	loops := sampleLoops()
+	loops = append(loops, loops[1])
+	loops[1].Status = loop.StatusAccepted
+	loops[1].ID = "decided-loop"
+	loops[2].ID = "parked-loop"
 
-	m = model{loops: sampleLoops()}
-	res, _ = m.handleKey(press('2', "2"))
-	m = res.(model)
-	if !m.focusDetail || m.tab != tabLive {
-		t.Fatalf("2 from the fleet should open the detail on the live view, got focus=%v tab=%d", m.focusDetail, m.tab)
+	if got := nextVisible(loops, 0, 1); loops[got].ID != "parked-loop" {
+		t.Fatalf("down should skip the decided loop, landed on %s", loops[got].ID)
+	}
+	if got := nextVisible(loops, 2, -1); got != 0 {
+		t.Fatalf("up should skip back over it, landed on %s", loops[got].ID)
+	}
+	// Nothing visible below: the cursor stays put.
+	loops[2].Status = loop.StatusRejected
+	if got := nextVisible(loops, 0, 1); got != 0 {
+		t.Fatalf("with only decided loops below, selection should stay, got %d", got)
 	}
 }

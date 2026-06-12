@@ -499,6 +499,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   that lands on green again skips a reviewer that already wrote its
   critique.
 
+- **2026-06-12 — The rail is the fleet; the strips are gone.** The owner's
+  first real drive of the fleet view delivered the verdict: with a normal
+  repo — mostly green/parked/decided history, rarely two live loops — the
+  strips duplicated the rail item-for-item and the right pane stopped
+  answering "what about the loop I selected." The strips earned their keep
+  only in the synthetic many-live-loops demo. So: browsing shows the
+  selected loop's detail again (the calm-pass view), and the multi-loop
+  awareness lives where it always did — the rail's glyphs, urgency groups,
+  and counts. Decided loops leave the rail too (selection skips them): the
+  header still counts them, `loopy logbook`/`list` hold the history, and
+  `loopy watch <id>` pins one back into view when asked. The reviewer
+  phase's activity wording stays. Net of the fleet experiment: the bounded
+  per-loop tail loader and the prototype lesson — herdr's "everything
+  breathing" translates to loopy as a *denser rail*, not a second list.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
