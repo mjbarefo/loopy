@@ -124,39 +124,54 @@ func (m *model) reload() {
 		// Newest first within a group; ListLoops is oldest-first.
 		return m.loops[i].CreatedAt > m.loops[j].CreatedAt
 	})
+	if m.flash != "" && time.Now().After(m.flashUntil) {
+		m.flash = ""
+	}
 	if len(m.loops) == 0 {
-		m.selected = 0
+		m.selected = -1
 		m.selectedID = ""
 		m.art = artifact{}
 		return
 	}
-	// Re-find the sticky selection; default to the top of the rail — the
-	// first loop that needs eyes (decided history is hidden there).
-	m.selected = 0
-	for i, v := range m.loops {
-		if railVisible(v) {
-			m.selected = i
-			break
-		}
-	}
-	for i, v := range m.loops {
-		if v.ID == m.selectedID {
-			m.selected = i
-			break
-		}
+	m.selected = reselect(m.loops, m.selectedID)
+	if m.selected < 0 {
+		// Every loop is decided and none is pinned: nothing needs eyes.
+		// The rail goes quiet instead of re-pinning the last decision —
+		// a just-accepted loop lingering looked like the accept failed.
+		m.selectedID = ""
+		m.art = artifact{}
+		return
 	}
 	m.selectedID = m.loops[m.selected].ID
 	m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
-	if m.flash != "" && time.Now().After(m.flashUntil) {
-		m.flash = ""
+}
+
+// reselect re-finds the sticky selection by ID (so `loopy watch <id>` can
+// pin a decided loop); otherwise the top of the rail — the first loop that
+// needs eyes. -1 when every loop is decided and nothing is pinned.
+func reselect(loops []loop.LoopView, stickyID string) int {
+	for i, v := range loops {
+		if stickyID != "" && v.ID == stickyID {
+			return i
+		}
 	}
+	for i, v := range loops {
+		if railVisible(v) {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m *model) selectLoop(delta int) {
 	if len(m.loops) == 0 {
 		return
 	}
-	m.selected = nextVisible(m.loops, m.selected, delta)
+	next := nextVisible(m.loops, m.selected, delta)
+	if next < 0 || next >= len(m.loops) {
+		return // a quiet rail has nothing to select
+	}
+	m.selected = next
 	m.selectedID = m.loops[m.selected].ID
 	m.scroll = -1
 	m.reload()
@@ -503,13 +518,22 @@ func (m *model) requestAccept() {
 		m.say("nothing to accept")
 		return
 	}
-	if out, err := runCLI(m.root, "accept", v.ID); err != nil {
+	id := v.ID
+	if out, err := runCLI(m.root, "accept", id); err != nil {
 		m.say("accept failed: %s", firstLine(out, err))
 		return
 	}
-	m.say("accepted %s — final-diff.patch is the durable record", v.ID)
+	m.say("accepted %s — final-diff.patch is the durable record", id)
 	m.selectedID = ""
 	m.reload()
+	// The accepted loop left the rail; keep its next move in the flash —
+	// the apply command is how the diff reaches a branch and a PR.
+	for _, lv := range m.loops {
+		if lv.ID == id && lv.NextCommand != "" {
+			m.say("accepted %s — apply it: %s", id, lv.NextCommand)
+			break
+		}
+	}
 }
 
 func (m *model) requestReject() {

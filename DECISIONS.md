@@ -544,6 +544,19 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   Accepting a *non-green* loop stays CLI-only: `--override --reason` is a
   deliberate, recorded act and deserves the deliberate path.
 
+- **2026-06-12 — The quiet rail, and the apply command outlives the flash.**
+  First in-monitor accept in anger: the accepted loop *stayed on screen*,
+  because when every loop is decided the selection fell back to index 0 and
+  the "selected loops always render" pin kept it there. It looked like the
+  accept hadn't worked; the owner deleted the loop seconds later — taking
+  `final-diff.patch` with it. Two calls: (1) when nothing needs eyes and no
+  loop is pinned by ID, the selection becomes *none* and the rail shows a
+  quiet state instead of re-pinning the last decision; (2) the quiet state
+  and the accept flash both carry the accepted loop's `git apply` command —
+  the human's road from accepted diff to branch and PR must outlive a
+  three-second flash. loopy still never commits, pushes, or opens PRs
+  (invariant 2); it prints the next move and stays out of the way.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

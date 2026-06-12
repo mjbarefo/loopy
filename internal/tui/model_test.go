@@ -187,6 +187,29 @@ func TestDeleteKeyConfirms(t *testing.T) {
 	}
 }
 
+// TestReselect: the sticky ID wins (loopy watch <id> pins decided loops);
+// otherwise the first loop that needs eyes; -1 when everything is decided —
+// the rail goes quiet rather than re-pinning the loop just decided.
+func TestReselect(t *testing.T) {
+	loops := sampleLoops()
+	if got := reselect(loops, ""); got != 0 {
+		t.Fatalf("no sticky id: want the first visible loop, got %d", got)
+	}
+	if got := reselect(loops, "flaky-importer"); got != 1 {
+		t.Fatalf("sticky id should win, got %d", got)
+	}
+
+	for i := range loops {
+		loops[i].Status = loop.StatusAccepted
+	}
+	if got := reselect(loops, ""); got != -1 {
+		t.Fatalf("all decided and nothing pinned: want -1, got %d", got)
+	}
+	if got := reselect(loops, "flaky-importer"); got != 1 {
+		t.Fatalf("a pinned decided loop must stay selectable, got %d", got)
+	}
+}
+
 // TestAcceptKeyIsContextual: a means abort while the loop moves and accept
 // once it parks green; a parked red loop points at the CLI override path.
 func TestAcceptKeyIsContextual(t *testing.T) {

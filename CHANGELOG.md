@@ -31,6 +31,14 @@ Homebrew tap.
   stream and ends with a `verdict` event). Schema and a worked example in
   `docs/orchestration.md`.
 
+### Fixed
+
+- Monitor: deciding the last undecided loop no longer leaves it pinned in
+  the rail looking un-decided. The rail goes quiet ("all quiet — every loop
+  is decided") and keeps the newest accepted loop's `git apply` command on
+  screen — the bridge from an accepted diff to a branch and a PR.
+  (`loopy watch <id>` still pins a decided loop explicitly.)
+
 ## [v0.1.0] - unreleased
 
 The first release: the complete loop engine and review workflow.
