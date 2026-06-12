@@ -31,6 +31,11 @@ const (
 	AgentLogFile    = "agent.log"
 	VerifierLogFile = "verifier.log"
 	DiffFile        = "diff.patch"
+
+	// ReviewPromptFile and CritiqueFile are the loop-level reviewer
+	// evidence: what the reviewer was told, and what it said.
+	ReviewPromptFile = "review-prompt.md"
+	CritiqueFile     = "critique.md"
 )
 
 var ErrNotInitialized = errors.New("no .loopy directory found: run `loopy init` first")

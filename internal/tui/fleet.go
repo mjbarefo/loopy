@@ -143,6 +143,8 @@ func fleetStatusText(s frameState, v loop.LoopView) string {
 			now = fmt.Sprintf("agent running · iter %d", v.PhaseIteration)
 		case loop.PhaseVerify:
 			now = fmt.Sprintf("verifying · iter %d", v.PhaseIteration)
+		case loop.PhaseReview:
+			now = "reviewer running"
 		default:
 			now = "between iterations"
 		}

@@ -482,6 +482,23 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   collapsed (one cursor at a time), and the per-loop tails are 8 KiB
   bounded reads (the fleet re-reads every live loop twice a second).
 
+- **2026-06-12 — The reviewer agent ships pre-v0.1, exactly as designed:
+  evidence, not a gate.** The design slotted it post-v0; the rung plan
+  pulled it forward as the first review-moves-up-the-stack feature. The
+  calls: `--reviewer <name>` must resolve to a registered agent *different*
+  from the author (refused at creation — the creator shouldn't grade its
+  own work); it runs once, when the loop first goes green with a non-empty
+  diff (baseline green is skipped — nothing to review), under a `review`
+  phase record; its stdout lands in `loops/<id>/critique.md` (256 KiB cap)
+  beside `review-prompt.md`, and `loopy review` quotes it. No reviewer
+  outcome — failure, timeout, missing agent — can stop the loop from
+  parking green; the exit code is recorded on the loop. The reviewer
+  reads, it must not ship: if the worktree changes during review it is
+  force-restored to base + the verified diff (`RestoreWorktree`), so the
+  parked diff is exactly the one the verifier approved. A resumed engine
+  that lands on green again skips a reviewer that already wrote its
+  critique.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

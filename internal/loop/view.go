@@ -42,6 +42,9 @@ type LoopView struct {
 	PhaseIteration int             `json:"phase_iteration,omitempty"`
 	PhaseStartedAt string          `json:"phase_started_at,omitempty"`
 	ParkedReason   string          `json:"parked_reason,omitempty"`
+	Reviewer       string          `json:"reviewer,omitempty"`
+	ReviewerExit   *int            `json:"reviewer_exit,omitempty"`
+	CritiquePath   string          `json:"critique_path,omitempty"`
 	IterationsUsed int             `json:"iterations_used"`
 	MaxIterations  int             `json:"max_iterations"`
 	WallClockUsed  string          `json:"wall_clock_used"`
@@ -74,6 +77,8 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 		ID:             l.ID,
 		Goal:           l.Goal,
 		Agent:          l.Agent,
+		Reviewer:       l.Reviewer,
+		ReviewerExit:   l.ReviewerExit,
 		Status:         l.Status,
 		Live:           live,
 		ParkedReason:   l.ParkedReason,
@@ -120,6 +125,11 @@ func BuildLoopView(root string, l Loop) (LoopView, error) {
 		view.LastFeedback = last.FeedbackTail
 		if last.DiffBytes > 0 {
 			view.FinalDiffPath = filepath.Join(IterationDir(root, l.ID, last.Index), DiffFile)
+		}
+	}
+	if critique := filepath.Join(LoopDir(root, l.ID), CritiqueFile); l.Reviewer != "" {
+		if _, err := os.Stat(critique); err == nil {
+			view.CritiquePath = critique
 		}
 	}
 	// After accept the durable copy is the one to point at.

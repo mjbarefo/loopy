@@ -19,6 +19,9 @@ const runHelp = `usage:
 flags:
   --verify <cmd>          verifier stage; repeatable, runs in order (fast→slow)
   --agent <name>          registered agent to use (default: registry default)
+  --reviewer <name>       different registered agent that critiques the green
+                          diff before parking; the critique is evidence
+                          attached to the review, never a gate
   --race <a,b[,c]>        race these agents on the goal in parallel worktrees;
                           the deterministic judge ranks the parked results
   --max-iters <n>         iteration budget (default 5)
@@ -54,6 +57,7 @@ func handleRun(cwd string, args []string) error {
 	fs.Var(&constraints, "constraint", "constraint (repeatable)")
 	fs.Var(&forbidden, "forbidden-path", "forbidden path (repeatable)")
 	agent := fs.String("agent", "", "agent name")
+	reviewer := fs.String("reviewer", "", "reviewer agent name")
 	race := fs.String("race", "", "comma-separated agents to race")
 	maxIters := fs.Int("max-iters", 0, "max iterations")
 	maxTime := fs.Duration("max-time", 0, "max wall clock")
@@ -96,6 +100,7 @@ func handleRun(cwd string, args []string) error {
 	opts := loop.CreateOptions{
 		Goal:           goal,
 		Agent:          *agent,
+		Reviewer:       *reviewer,
 		Verifier:       stages,
 		Constraints:    constraints,
 		ForbiddenPaths: forbidden,
@@ -253,6 +258,13 @@ func progressEvents(root string) loop.Events {
 			if it.Violation != "" {
 				fmt.Printf("iter %d: %s %s\n", it.Index, colorize(red, "✗"), it.Violation)
 			}
+		},
+		ReviewerDone: func(exitCode int, d time.Duration) {
+			verdict := fmt.Sprintf("exit %d", exitCode)
+			if exitCode != 0 {
+				verdict = colorize(red, verdict)
+			}
+			fmt.Printf("reviewer done (%s, %s) — critique recorded\n", verdict, d.Round(time.Second))
 		},
 		Note: func(s string) {
 			fmt.Printf("note: %s\n", s)

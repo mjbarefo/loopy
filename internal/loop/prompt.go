@@ -89,3 +89,40 @@ func shortCommit(c string) string {
 	}
 	return c
 }
+
+// ComposeReviewPrompt builds the reviewer's prompt: the creator shouldn't
+// grade its own work, and the grader shouldn't rewrite it. The critique it
+// produces is evidence attached to the review, never a gate.
+func ComposeReviewPrompt(l Loop, index int, diffPath string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# loopy — review of loop %q (verifier green after %d iteration(s))\n\n", l.ID, index)
+
+	b.WriteString("## Goal the diff claims to achieve\n\n")
+	b.WriteString(strings.TrimSpace(l.Goal))
+	b.WriteString("\n")
+
+	if len(l.Constraints) > 0 {
+		b.WriteString("\n## Constraints the author was given\n\n")
+		for _, c := range l.Constraints {
+			fmt.Fprintf(&b, "- %s\n", c)
+		}
+	}
+
+	b.WriteString("\n## Verifier (already green)\n\n")
+	for i, stage := range l.Verifier {
+		fmt.Fprintf(&b, "%d. %s: `%s`\n", i+1, stage.Name, stage.Cmd)
+	}
+
+	fmt.Fprintf(&b, "\n## The diff\n\nThe cumulative diff vs base commit %s is at:\n\n    %s\n\nYour working directory is the loop's worktree, with the diff applied.\n", shortCommit(l.BaseCommit), diffPath)
+
+	b.WriteString(`
+## Rules
+
+- You are the reviewer, not the author. Do NOT modify, create, or delete any file — any change you make will be reverted.
+- Read the diff (and any file you need) and write your critique to stdout.
+- Cover: does the diff achieve the goal, or merely satisfy the verifier? Correctness risks, constraint violations, and what a human reviewer should look at first.
+- Be specific: name files and lines.
+- End with exactly one line: "verdict: looks right" or "verdict: needs human attention — <why>".
+`)
+	return b.String()
+}

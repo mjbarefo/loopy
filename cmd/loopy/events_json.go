@@ -99,6 +99,10 @@ func (e *jsonEmitter) events(loopID string) loop.Events {
 				DiffBytes:    &diff,
 			})
 		},
+		ReviewerDone: func(exitCode int, d time.Duration) {
+			ms := d.Milliseconds()
+			e.emit(runEvent{Event: "reviewer_done", LoopID: loopID, ExitCode: &exitCode, DurationMS: &ms})
+		},
 		Note: func(s string) {
 			e.emit(runEvent{Event: "note", LoopID: loopID, Note: s})
 		},

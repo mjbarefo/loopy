@@ -511,6 +511,8 @@ func activityLine(s frameState, v loop.LoopView, width int) cell {
 			now = fmt.Sprintf("now: agent running · iter %d", v.PhaseIteration)
 		case loop.PhaseVerify:
 			now = fmt.Sprintf("now: verifying · iter %d", v.PhaseIteration)
+		case loop.PhaseReview:
+			now = "now: reviewer critiquing the green diff"
 		default:
 			now = "now: between iterations"
 		}
@@ -640,6 +642,8 @@ func runningVerb(v loop.LoopView) string {
 		return "agent running"
 	case loop.PhaseVerify:
 		return "verifying"
+	case loop.PhaseReview:
+		return "reviewer running"
 	default:
 		return "running"
 	}

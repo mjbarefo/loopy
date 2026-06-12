@@ -10,6 +10,10 @@ Homebrew tap.
 
 ### Added
 
+- The reviewer agent: `loopy run --reviewer <name>` runs a *different*
+  registered agent against the green diff before parking; its critique is
+  recorded as `critique.md` and shown by `loopy review` — evidence, never a
+  gate. Any change the reviewer makes to the worktree is reverted.
 - The fleet view: with several loops, browsing the monitor shows every loop
   as a live strip — status, per-iteration verdict run, verifier stage meter,
   and a short live tail — with enter/esc moving between the fleet and one
