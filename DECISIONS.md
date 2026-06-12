@@ -392,6 +392,57 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   not a target, since green ends the loop immediately. Per-loop override
   stays one field in the wizard and `--max-iters` in the CLI.
 
+- **2026-06-11 — The calm pass: margins, a color diet, and a quiet nav.**
+  Owner's verdict on the identity pass from real use: "nowhere as
+  intuitive or as beautifully minimal as herdr." The fixes, in the
+  splash's spirit (mostly emptiness, one accent doing real work): at
+  ≥80×20 the frame gets a blank row inside each rule and a two-column
+  gutter ahead of the rail (below that, the dense layout and the 40×8
+  floor are byte-identical); status hues shrink to glyph size everywhere
+  but the timeline's verdict cell (the evidence keeps its green/red) —
+  activity lines, the title's status phrase, the truncation banner, the
+  flash, and the abort confirm all carry one colored glyph and plain
+  words; the bracketed tab bar becomes `▸ overview   live   diff
+  verifier` with ▸ as the non-color signal; the rail separates live →
+  needs-you → history with a blank row. The gutter stops at two columns
+  and the separator gap stays a single space because widening it shaved
+  the last byte-count column off the timeline at 100 wide — facts
+  outrank air.
+
+- **2026-06-11 — Footer diet: three hints, all-or-nothing.** The footer
+  is `n new · enter open · ? keys` (detail focus: `esc back · ? keys`)
+  plus the right-aligned next command; the header keeps `? help` and
+  drops `q quit`; everything else lives behind `?` (help gained the page
+  keys). When the next command needs the room, hints now yield whole —
+  full chain, then bare `? keys`, then nothing — replacing the old
+  word-by-word dropping; the next command is a fact and always stays.
+  This is the pass's one sanctioned compression: hints, never facts.
+
+- **2026-06-11 — The wizard is staged like the splash.** Headroom above
+  the title, one accent per screen (the input cursor, the list cursor,
+  or the confirm action line — the race marks went plain so the cursor
+  keeps the accent), and one dim affordance line per screen ("enter
+  continues · esc goes back") instead of a cyan action line plus a
+  footer key chain; the footer goes blank while the wizard is open
+  (validation flashes still land there). The confirm screen's cyan
+  action line is its own affordance — esc said the same thing on all
+  four screens before it, so it is not repeated there.
+
+- **2026-06-11 — Rail groups get a gap, not a label.** Considered a tiny
+  dim group label ("needs you") between the urgency groups; the blank
+  row alone already reads as structure at every tested size, and the
+  diagnosis named word noise as the disease — so the gap is the label.
+  Revisit if a rail ever holds enough loops that the groups blur.
+
+- **2026-06-11 — Baseline-green tells the truth.** A loop that goes
+  green with zero iterations means the verifier passed before any agent
+  ran; the monitor used to present it as a win. The activity line now
+  reads "already green at baseline — nothing to do, or the verifier may
+  not test the goal" behind a yellow `!` (caution, not celebration);
+  `loopy review`'s diff-none line aligned to the same wording. The rail
+  glyph stays the green ✓ — the status is factually green; only the
+  framing changed.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
