@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,6 +41,15 @@ func wideState() frameState {
 	return frameState{
 		width: 120, height: 36, loops: sampleLoops(), selected: 0, tab: tabOverview, scroll: -1,
 	}
+}
+
+// detailState is wideState with the selected loop's detail open — the view
+// behind enter, where the timeline and activity-line assertions live.
+// (Browsing with several loops shows the fleet instead.)
+func detailState() frameState {
+	s := wideState()
+	s.focusDetail = true
+	return s
 }
 
 // checkFrameGeometry asserts every line is exactly as wide as the terminal,
@@ -93,7 +103,7 @@ func TestFrameColorOffHasNoANSI(t *testing.T) {
 }
 
 func TestFrameColorOnKeepsGlyphs(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.color = true
 	frame := renderFrame(s)
 	if !strings.Contains(frame, "\x1b[") {
@@ -112,7 +122,7 @@ func TestFrameColorOnKeepsGlyphs(t *testing.T) {
 // status color in exactly one place per row — the rail glyph and the verdict
 // cell, never the whole line.
 func TestFrameIdentityAccents(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.color = true
 	frame := renderFrame(s)
 
@@ -153,7 +163,7 @@ func TestFrameIdentityAccents(t *testing.T) {
 }
 
 func TestFrameOverviewAnswersTheQuestions(t *testing.T) {
-	frame := renderFrame(wideState())
+	frame := renderFrame(detailState())
 	for _, want := range []string{
 		"1 running",                   // header: what is here
 		"✗ test (1/2)",                // timeline + convergence signal
@@ -182,7 +192,7 @@ func TestFrameRunningLoopHasNoUselessNext(t *testing.T) {
 }
 
 func TestFrameParkedReasonIsTheActivityLine(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.selected = 1
 	if !strings.Contains(renderFrame(s), "✗ stuck: no change") {
 		t.Error("parked loop should lead with why it stopped")
@@ -190,7 +200,7 @@ func TestFrameParkedReasonIsTheActivityLine(t *testing.T) {
 }
 
 func TestFrameTruncationBanner(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.tab = tabDiff
 	s.art = artifact{
 		label: "iter 2 · diff.patch", truncated: true, size: 1 << 20,
@@ -462,7 +472,7 @@ func TestFrameTooSmall(t *testing.T) {
 }
 
 func TestFrameRunningStaleIsAlarming(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.loops[0].Live = false
 	frame := renderFrame(s)
 	if !strings.Contains(frame, "running (no engine)") {
@@ -595,7 +605,7 @@ func TestRailGroupGaps(t *testing.T) {
 // live timeline row colors only its dot. The verdict cell (tested above)
 // stays the one permitted block of status color.
 func TestFrameColorDiet(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.color = true
 	frame := renderFrame(s)
 	if !strings.Contains(frame, "\x1b[36m●\x1b[0m now: agent running") {
@@ -618,7 +628,7 @@ func TestFrameColorDiet(t *testing.T) {
 // TestFrameBaselineGreenHonesty: green after zero iterations means the agent
 // never ran — the monitor says so instead of celebrating.
 func TestFrameBaselineGreenHonesty(t *testing.T) {
-	s := wideState()
+	s := detailState()
 	s.loops[0] = loop.LoopView{
 		ID: "already-green", Goal: "a goal the verifier may not test",
 		Agent: "claude", Status: loop.StatusGreen,
@@ -654,5 +664,89 @@ func TestWindowFollowsTail(t *testing.T) {
 	got = window(lines, 2, 0)
 	if got[0].plain != "1" {
 		t.Fatalf("scroll-to-top window = %v", got)
+	}
+}
+
+// TestFrameFleetShowsEveryLoop: browsing with several loops renders the
+// fleet — every loop's strip carries its status words, its convergence
+// signature, and (when live) a short tail.
+func TestFrameFleetShowsEveryLoop(t *testing.T) {
+	s := wideState()
+	s.tails = map[string][]string{"fix-csv-quoting": {"running TestQuotedNewlines"}}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{
+		"fix-csv-quoting — agent running · iter 3",
+		"flaky-importer — parked — stuck: no change",
+		"✗ ✓ ●", // verdict run: red, green, in flight
+		"| running TestQuotedNewlines",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("fleet missing %q\n%s", want, frame)
+		}
+	}
+}
+
+// TestFrameFleetDecidedLoopsStayQuiet: history compresses to one line.
+func TestFrameFleetDecidedLoopsStayQuiet(t *testing.T) {
+	s := wideState()
+	s.loops[1].Status = loop.StatusAccepted
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "flaky-importer — decided: accepted") {
+		t.Errorf("decided loop should appear as one quiet line\n%s", frame)
+	}
+}
+
+// TestFrameFleetKeepsSelectionVisible: when the strips outgrow the frame,
+// the window follows the selection.
+func TestFrameFleetKeepsSelectionVisible(t *testing.T) {
+	s := wideState()
+	var loops []loop.LoopView
+	for i := 0; i < 12; i++ {
+		v := sampleLoops()[1]
+		v.ID = fmt.Sprintf("parked-%02d", i)
+		loops = append(loops, v)
+	}
+	s.loops = loops
+	s.selected = 11
+	s.height = 14
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 14)
+	if !strings.Contains(frame, "parked-11 — parked") {
+		t.Errorf("the selected strip must stay visible\n%s", frame)
+	}
+}
+
+// TestFrameFleetNarrowCarriesCursor: with the rail collapsed the strips
+// carry the selection cursor — color is never the only signal.
+func TestFrameFleetNarrowCarriesCursor(t *testing.T) {
+	s := wideState()
+	s.width, s.height = 60, 24
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 60, 24)
+	if !strings.Contains(frame, "▶ ● fix-csv-quoting") {
+		t.Errorf("collapsed-rail fleet needs the cursor on the selected strip\n%s", frame)
+	}
+}
+
+// TestFrameOnceKeepsTheSingleLoopFrame: --once's byte contract predates the
+// fleet and stays the selected loop's overview.
+func TestFrameOnceKeepsTheSingleLoopFrame(t *testing.T) {
+	s := wideState()
+	s.once = true
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "last feedback tail:") {
+		t.Errorf("--once should keep the single-loop overview\n%s", frame)
+	}
+}
+
+// TestFrameSingleLoopSkipsFleet: one loop browsing = the full detail, same
+// as before the fleet existed.
+func TestFrameSingleLoopSkipsFleet(t *testing.T) {
+	s := wideState()
+	s.loops = s.loops[:1]
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "now: agent running · iter 3") {
+		t.Errorf("a single loop should render its detail, not a strip\n%s", frame)
 	}
 }

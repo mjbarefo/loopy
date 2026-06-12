@@ -10,6 +10,10 @@ Homebrew tap.
 
 ### Added
 
+- The fleet view: with several loops, browsing the monitor shows every loop
+  as a live strip — status, per-iteration verdict run, verifier stage meter,
+  and a short live tail — with enter/esc moving between the fleet and one
+  loop's full detail. `watch --once` is unchanged.
 - `loopy run --json` and `loopy resume --json`: progress as an NDJSON event
   stream for scripts and outer orchestrators, ending in a `result` event
   that carries the full loop view (`--race` interleaves all loops on one

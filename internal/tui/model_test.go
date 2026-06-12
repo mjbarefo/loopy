@@ -135,3 +135,29 @@ func TestWizardWalksTheSteps(t *testing.T) {
 		t.Fatal("an empty goal must not advance")
 	}
 }
+
+// TestFleetKeysOpenDetail: from the fleet, view keys land in the detail —
+// the first tab opens it, digits open it on the named view.
+func TestFleetKeysOpenDetail(t *testing.T) {
+	m := model{loops: sampleLoops()}
+	res, _ := m.handleKey(press(tea.KeyTab, ""))
+	m = res.(model)
+	if !m.focusDetail {
+		t.Fatal("tab from the fleet should open the selected loop's detail")
+	}
+	if m.tab != tabOverview {
+		t.Fatalf("the first tab press should not advance the view, got tab %d", m.tab)
+	}
+	res, _ = m.handleKey(press(tea.KeyTab, ""))
+	m = res.(model)
+	if m.tab != tabLive {
+		t.Fatalf("tab inside the detail should cycle views, got tab %d", m.tab)
+	}
+
+	m = model{loops: sampleLoops()}
+	res, _ = m.handleKey(press('2', "2"))
+	m = res.(model)
+	if !m.focusDetail || m.tab != tabLive {
+		t.Fatalf("2 from the fleet should open the detail on the live view, got focus=%v tab=%d", m.focusDetail, m.tab)
+	}
+}

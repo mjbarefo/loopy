@@ -464,6 +464,24 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   Exit codes are untouched — the stream is observability, the exit code is
   the verdict. The schema lives in docs/orchestration.md.
 
+- **2026-06-12 — The fleet view: browsing shows every loop breathing.** The
+  herdr comparison named what the monitor lacked: with several loops only
+  the selected one was alive on screen. Now browsing (rail focus) renders
+  the fleet — one strip per loop in rail order: status words, a verdict run
+  (`✗ ✗ ●`, one glyph per agent iteration), a verifier stage meter
+  (`verify ▮▮▯ test`), and a 2-line live tail; enter opens the full detail,
+  esc returns, tab/1–4 from the fleet land in the detail. herdr shows you
+  terminals; loopy shows you convergence — that is the loop-shaped
+  translation, and it was picked over tmux-style split panes and a card
+  grid after prototyping all three (LOOPY_UI_PROTO, throwaway branch).
+  The calls: fleet only at ≥2 loops (a count rule — a status rule would
+  flip the view mid-watch; one loop keeps its richer detail), `--once`
+  keeps its single-loop byte contract, decided loops compress to one quiet
+  line, the strip gap doubles at urgency-group boundaries (the gap is
+  still the label), the strips carry the ▶ cursor only when the rail is
+  collapsed (one cursor at a time), and the per-loop tails are 8 KiB
+  bounded reads (the fleet re-reads every live loop twice a second).
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
