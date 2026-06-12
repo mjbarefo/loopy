@@ -30,6 +30,11 @@ Homebrew tap.
   that carries the full loop view (`--race` interleaves all loops on one
   stream and ends with a `verdict` event). Schema and a worked example in
   `docs/orchestration.md`.
+- Monitor wizard: on the verifier step, `tab` asks the selected agent to
+  propose a goal-testing verifier — the monitor keeps running while the
+  agent explores a throwaway worktree, the proposal lands in the editable
+  field attributed to its agent, and enter remains your sign-off. The whole
+  loop-creation flow now lives inside bare `loopy`.
 - `loopy run "<goal>" --verify auto`: the agent proposes the goal-testing
   verifier. The registered agent runs once in a throwaway worktree, its
   proposed command is trial-run there (an already-passing proposal is

@@ -187,6 +187,60 @@ func TestDeleteKeyConfirms(t *testing.T) {
 	}
 }
 
+// TestWizardSynthesis: tab on the verifier step asks the agent (async);
+// typing and enter are parked while it thinks; the proposal lands in the
+// editable field marked edited (so it is never stored as project default);
+// esc cancels and the stale result is dropped by sequence.
+func TestWizardSynthesis(t *testing.T) {
+	m := model{form: formState{
+		active: true, step: stepVerifier, goal: "make x",
+		agents: []string{"claude"}, picked: map[int]bool{},
+	}}
+	res, cmd := m.handleFormKey(press(tea.KeyTab, ""))
+	m = res.(model)
+	if !m.form.synthesizing || cmd == nil {
+		t.Fatal("tab should start synthesis and return its command")
+	}
+	seq := m.form.synthSeq
+
+	// Enter and typing are parked while the agent thinks.
+	res, _ = m.handleFormKey(press(tea.KeyEnter, ""))
+	m = res.(model)
+	if m.form.step != stepVerifier {
+		t.Fatal("enter must not advance during synthesis")
+	}
+	res, _ = m.handleFormKey(press('x', "x"))
+	m = res.(model)
+	if m.form.verifier != "" {
+		t.Fatal("typing must be parked during synthesis")
+	}
+
+	// The proposal lands: prefilled, editable, marked edited.
+	res2, _ := m.Update(synthDoneMsg{seq: seq, res: loop.SynthesisResult{Agent: "claude", Cmd: "test -f x.txt"}})
+	m = res2.(model)
+	if m.form.synthesizing || m.form.verifier != "test -f x.txt" || !m.form.edited {
+		t.Fatalf("proposal did not land: %+v", m.form)
+	}
+	if m.form.proposedBy != "claude" || m.flash == "" {
+		t.Fatal("the proposal should be attributed and announced")
+	}
+
+	// Esc cancels a pending ask; the late result is dropped by sequence.
+	res, _ = m.handleFormKey(press(tea.KeyTab, ""))
+	m = res.(model)
+	staleSeq := m.form.synthSeq
+	res, _ = m.handleFormKey(press(tea.KeyEscape, ""))
+	m = res.(model)
+	if m.form.synthesizing || m.form.step != stepVerifier {
+		t.Fatal("esc during synthesis should cancel in place")
+	}
+	res2, _ = m.Update(synthDoneMsg{seq: staleSeq, res: loop.SynthesisResult{Agent: "claude", Cmd: "rm -rf /"}})
+	m = res2.(model)
+	if m.form.verifier == "rm -rf /" {
+		t.Fatal("a cancelled proposal must be dropped")
+	}
+}
+
 // TestReselect: the sticky ID wins (loopy watch <id> pins decided loops);
 // otherwise the first loop that needs eyes; -1 when everything is decided —
 // the rail goes quiet rather than re-pinning the loop just decided.

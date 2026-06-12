@@ -25,6 +25,21 @@ func tick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+// synthDoneMsg carries a verifier proposal back into the wizard. seq pairs
+// it with the request that started it; stale results (after esc) are dropped.
+type synthDoneMsg struct {
+	seq int
+	res loop.SynthesisResult
+	err error
+}
+
+func synthesizeCmd(root, agent, goal string, seq int) tea.Cmd {
+	return func() tea.Msg {
+		res, err := loop.SynthesizeVerifier(root, agent, goal)
+		return synthDoneMsg{seq: seq, res: res, err: err}
+	}
+}
+
 type model struct {
 	root  string
 	color bool
@@ -227,8 +242,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.reload()
 		return m, tick()
+	case synthDoneMsg:
+		return m.handleSynthDone(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	}
+	return m, nil
+}
+
+// handleSynthDone lands an agent's verifier proposal in the wizard's
+// editable field. The human's enter remains the signature; a synthesized
+// verifier is goal-specific and never stored as the project default
+// (edited=true keeps it out of the confirm-once store path).
+func (m model) handleSynthDone(msg synthDoneMsg) (tea.Model, tea.Cmd) {
+	if !m.form.active || m.form.step != stepVerifier || msg.seq != m.form.synthSeq || !m.form.synthesizing {
+		return m, nil // the wizard moved on; drop the stale result
+	}
+	m.form.synthesizing = false
+	if msg.err != nil {
+		m.say("verifier proposal failed: %v", msg.err)
+		return m, nil
+	}
+	m.form.verifier = msg.res.Cmd
+	m.form.edited = true
+	m.form.proposedBy = msg.res.Agent
+	if msg.res.AlreadyGreen {
+		m.say("warning: the proposal already passes — the goal may be done, or it may not test the goal")
+	} else {
+		m.say("proposed by %s — red right now, as it should be; enter is your sign-off", msg.res.Agent)
 	}
 	return m, nil
 }
@@ -630,7 +671,10 @@ func (m model) frameState() frameState {
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
 	}
-	// The elapsed clock is the model's: the renderer stays deterministic.
+	// The elapsed clocks are the model's: the renderer stays deterministic.
+	if m.form.synthesizing {
+		s.synthElapsed = time.Since(m.form.synthStarted).Round(time.Second).String()
+	}
 	if v := m.current(); v != nil && v.Live && v.PhaseStartedAt != "" {
 		if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
 			if d := time.Since(started); d > 0 {
@@ -660,6 +704,13 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
+		if m.form.synthesizing {
+			// Cancel the pending proposal; its late result is dropped by seq.
+			m.form.synthesizing = false
+			m.form.synthSeq++
+			m.say("proposal cancelled")
+			return m, nil
+		}
 		if m.form.step == stepGoal {
 			m.form = formState{}
 		} else {
@@ -667,7 +718,14 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		if m.form.synthesizing {
+			m.say("still asking %s — esc cancels", strings.Join(m.form.selectedAgents(), "+"))
+			return m, nil
+		}
 		return m.wizardAdvance()
+	}
+	if m.form.synthesizing {
+		return m, nil // typing is parked while the agent thinks
 	}
 
 	switch m.form.step {
@@ -689,9 +747,21 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case stepVerifier:
+		if key == "tab" {
+			agents := m.form.selectedAgents()
+			if len(agents) == 0 {
+				m.say("pick an agent first — it does the proposing")
+				return m, nil
+			}
+			m.form.synthesizing = true
+			m.form.synthStarted = time.Now()
+			m.form.synthSeq++
+			return m, synthesizeCmd(m.root, agents[0], strings.TrimSpace(m.form.goal), m.form.synthSeq)
+		}
 		if next := editText(m.form.verifier, key, msg.Text, 500); next != m.form.verifier {
 			m.form.verifier = next
 			m.form.edited = true
+			m.form.proposedBy = ""
 		}
 	case stepBudget:
 		switch key {
