@@ -49,12 +49,14 @@ type model struct {
 	art           artifact
 	confirmAbort  bool
 	confirmDelete bool
+	confirmAccept bool
+	confirmReject bool
 	showHelp      bool
 	flash         string
 	flashUntil    time.Time
 
 	// exitHint is printed by the watch command after the program exits —
-	// the deep link out of the monitor (accept/reject stay in the CLI).
+	// the deep link out of the monitor (o hands off the next command).
 	exitHint string
 }
 
@@ -251,6 +253,26 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.confirmDelete = false
 		return m, nil
 	}
+	if m.confirmAccept {
+		switch key {
+		case "y":
+			m.requestAccept()
+		case "n", "esc", "q", "ctrl+c":
+			m.say("accept cancelled")
+		}
+		m.confirmAccept = false
+		return m, nil
+	}
+	if m.confirmReject {
+		switch key {
+		case "y":
+			m.requestReject()
+		case "n", "esc", "q", "ctrl+c":
+			m.say("reject cancelled")
+		}
+		m.confirmReject = false
+		return m, nil
+	}
 
 	switch key {
 	case "ctrl+c", "q":
@@ -341,13 +363,30 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.requestPause()
 		return m, nil
 	case "r":
-		m.requestResume()
+		// Contextual: reject judges a parked loop; everything else is resume.
+		switch v := m.current(); {
+		case v != nil && (v.Status == loop.StatusGreen || v.Status == loop.StatusParked):
+			m.confirmReject = true
+		case v != nil && decided(*v):
+			m.say("%s is already %s", v.ID, v.Status)
+		default:
+			m.requestResume()
+		}
 		return m, nil
 	case "a":
-		if v := m.current(); v != nil && !done(*v) {
-			m.confirmAbort = true
-		} else {
+		// Contextual: abort stops a moving loop; accept judges a green one.
+		// Accepting a parked red loop is an override and stays in the CLI.
+		switch v := m.current(); {
+		case v == nil:
 			m.say("nothing to abort")
+		case !done(*v):
+			m.confirmAbort = true
+		case v.Status == loop.StatusGreen:
+			m.confirmAccept = true
+		case v.Status == loop.StatusParked:
+			m.say("%s is not green — accepting it is an override: loopy accept %s --override --reason …", v.ID, v.ID)
+		default:
+			m.say("%s is already %s", v.ID, v.Status)
 		}
 		return m, nil
 	case "d":
@@ -446,11 +485,44 @@ func (m *model) requestDelete() {
 		m.say("nothing to delete")
 		return
 	}
-	if out, err := runDelete(m.root, v.ID); err != nil {
+	if out, err := runCLI(m.root, "delete", v.ID); err != nil {
 		m.say("delete failed: %s", firstLine(out, err))
 		return
 	}
 	m.say("deleted %s — the logbook keeps the record", v.ID)
+	m.selectedID = ""
+	m.reload()
+}
+
+// requestAccept and requestReject record the judgment through the audited
+// CLI, same rule as delete. Decided loops leave the rail; the selection
+// falls back to the next loop that needs eyes.
+func (m *model) requestAccept() {
+	v := m.current()
+	if v == nil {
+		m.say("nothing to accept")
+		return
+	}
+	if out, err := runCLI(m.root, "accept", v.ID); err != nil {
+		m.say("accept failed: %s", firstLine(out, err))
+		return
+	}
+	m.say("accepted %s — final-diff.patch is the durable record", v.ID)
+	m.selectedID = ""
+	m.reload()
+}
+
+func (m *model) requestReject() {
+	v := m.current()
+	if v == nil {
+		m.say("nothing to reject")
+		return
+	}
+	if out, err := runCLI(m.root, "reject", v.ID); err != nil {
+		m.say("reject failed: %s", firstLine(out, err))
+		return
+	}
+	m.say("rejected %s — evidence kept, worktree freed", v.ID)
 	m.selectedID = ""
 	m.reload()
 }
@@ -528,6 +600,8 @@ func (m model) frameState() frameState {
 		art:              m.art,
 		confirmAbort:     m.confirmAbort,
 		confirmDelete:    m.confirmDelete,
+		confirmAccept:    m.confirmAccept,
+		confirmReject:    m.confirmReject,
 		flash:            m.flash,
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
@@ -708,6 +782,10 @@ func done(v loop.LoopView) bool {
 		return true
 	}
 	return false
+}
+
+func decided(v loop.LoopView) bool {
+	return v.Status == loop.StatusAccepted || v.Status == loop.StatusRejected
 }
 
 func clamp(v, lo, hi int) int {

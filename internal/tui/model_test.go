@@ -186,3 +186,66 @@ func TestDeleteKeyConfirms(t *testing.T) {
 		t.Fatal("the refusal should say what to do instead")
 	}
 }
+
+// TestAcceptKeyIsContextual: a means abort while the loop moves and accept
+// once it parks green; a parked red loop points at the CLI override path.
+func TestAcceptKeyIsContextual(t *testing.T) {
+	loops := sampleLoops()
+	loops[1].Status = loop.StatusGreen
+
+	m := model{loops: loops, selected: 0} // running loop
+	res, _ := m.handleKey(press('a', "a"))
+	m = res.(model)
+	if !m.confirmAbort || m.confirmAccept {
+		t.Fatal("a on a running loop should arm abort, not accept")
+	}
+
+	m = model{loops: loops, selected: 1} // green loop
+	res, _ = m.handleKey(press('a', "a"))
+	m = res.(model)
+	if !m.confirmAccept || m.confirmAbort {
+		t.Fatal("a on a green loop should arm accept, not abort")
+	}
+	res, _ = m.handleKey(press('n', "n"))
+	m = res.(model)
+	if m.confirmAccept || m.flash == "" {
+		t.Fatal("n should cancel the accept and say so")
+	}
+
+	m = model{loops: sampleLoops(), selected: 1} // parked red loop
+	res, _ = m.handleKey(press('a', "a"))
+	m = res.(model)
+	if m.confirmAccept || m.confirmAbort {
+		t.Fatal("a parked red loop is neither abortable nor acceptable here")
+	}
+	if m.flash == "" {
+		t.Fatal("the refusal should point at loopy accept --override")
+	}
+}
+
+// TestRejectKeyIsContextual: r rejects a parked loop (green or red) and
+// stays resume everywhere else.
+func TestRejectKeyIsContextual(t *testing.T) {
+	for _, status := range []string{loop.StatusGreen, loop.StatusParked} {
+		loops := sampleLoops()
+		loops[1].Status = status
+		m := model{loops: loops, selected: 1}
+		res, _ := m.handleKey(press('r', "r"))
+		m = res.(model)
+		if !m.confirmReject {
+			t.Fatalf("r on a %s loop should arm the reject confirmation", status)
+		}
+		res, _ = m.handleKey(press(tea.KeyEscape, ""))
+		m = res.(model)
+		if m.confirmReject || m.flash == "" {
+			t.Fatal("esc should cancel the reject and say so")
+		}
+	}
+
+	m := model{loops: sampleLoops(), selected: 0} // live loop: r is resume
+	res, _ := m.handleKey(press('r', "r"))
+	m = res.(model)
+	if m.confirmReject {
+		t.Fatal("r on a running loop must stay resume, not reject")
+	}
+}
