@@ -443,6 +443,16 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   glyph stays the green ✓ — the status is factually green; only the
   framing changed.
 
+- **2026-06-12 — "Reviewing stays human" is policy, not invariant.** The
+  design fused two claims: loopy never ships (a tool invariant, permanent)
+  and a human reviews every diff (a placement policy). Current
+  loop-engineering practice — remove yourself as the bottleneck, stack
+  loops — pressures the second claim, never the first; and the first is
+  exactly what makes the second movable, because an outer loop can gate on
+  `loopy run`'s exit code and read the evidence files, putting the human
+  one rung higher. DESIGN.md and the README now separate the two and name
+  the composition surface ("loopy as a rung"). No invariant changed.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

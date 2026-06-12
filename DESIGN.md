@@ -24,14 +24,33 @@ the current state, run it, verify the output mechanically, feed failures back, r
 Today that practice is held together with shell scripts, cron jobs, and markdown files.
 loopy makes the loop a first-class, inspectable, resumable object with a real UI.
 
-What stays human, permanently:
+What stays human:
 
 - **Designing the loop** — choosing the goal, the verifier, and the budget *is* the
-  engineering. A loop with a weak verifier converges on garbage quickly.
-- **Reviewing the result** — loopy never merges. A green verifier earns a parked diff
-  and a review, not a commit to your branch.
+  engineering. A loop with a weak verifier converges on garbage quickly; when the
+  human steps out of the loop, the verifier is their judgment, mechanized.
+- **Accountability for what ships** — loopy never merges, commits to your branches,
+  or pushes. A green verifier earns a parked diff and its evidence, not a commit.
+  That invariant belongs to the tool and is permanent. *Who reviews* each parked
+  diff is a policy that belongs to whatever sits above loopy: a person today; a
+  reviewer agent or an outer loop tomorrow. Moving review up the stack is
+  composition, not a loopy setting — and the audited accept/reject record stays,
+  whoever drives it.
 - **Judgment between competing results** — when loops race, ranking is deterministic
   and evidence-based, but acceptance is yours.
+
+### loopy as a rung
+
+The unit above a loop is another loop. loopy is built to be stacked on, not just
+watched: `loopy run` exits 0 only when the loop parks green, `--json` covers the
+read surface, accept/reject are non-interactive, and everything on disk is plain
+JSON / markdown / patches an outer orchestrator can read without loopy. Going *up*
+a loop (a goal generator that spawns loops and escalates only failures to a person)
+is the leverage story. Going *down* one is the reliability story: every iteration's
+exact prompt, verifier transcript, diff, and stuck-reason is the flight recorder
+for the rung below you — and recorders matter more, not less, as the distance
+between the human and the failure grows. loopy's job is to be a load-rated rung in
+both directions.
 
 ## What loopy is not
 
