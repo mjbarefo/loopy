@@ -177,7 +177,18 @@ func handlePause(cwd string, args []string) error {
 }
 
 func handleResume(cwd string, args []string) error {
-	root, loopID, err := loadControlTarget(cwd, args, "resume")
+	// resume drives an engine like run does, so it streams the same NDJSON
+	// events with --json.
+	jsonOut := false
+	rest := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--json" {
+			jsonOut = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	root, loopID, err := loadControlTarget(cwd, rest, "resume")
 	if err != nil {
 		return err
 	}
@@ -194,7 +205,7 @@ func handleResume(cwd string, args []string) error {
 	if err := loop.ClearControl(root, l.ID); err != nil {
 		return err
 	}
-	return driveEngine(root, l.ID)
+	return driveEngine(root, l.ID, jsonOut)
 }
 
 func handleAbort(cwd string, args []string) error {

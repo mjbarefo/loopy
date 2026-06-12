@@ -453,6 +453,17 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   one rung higher. DESIGN.md and the README now separate the two and name
   the composition surface ("loopy as a rung"). No invariant changed.
 
+- **2026-06-12 — `run`/`resume --json` stream NDJSON; the flag means "machine
+  face", not "one document".** Everywhere else `--json` prints a single
+  document, but a foreground engine's output is inherently a stream, so run's
+  `--json` emits one event object per line and ends with a `result` event
+  carrying the same LoopView that `status --json` serves — one shape for
+  consumers. Race mode shares the stream (`loop_id` disambiguates) and ends
+  with a `verdict` event. `--json` also implies non-interactive: an
+  unconfirmed inferred verifier is refused, never prompted into the stream.
+  Exit codes are untouched — the stream is observability, the exit code is
+  the verdict. The schema lives in docs/orchestration.md.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

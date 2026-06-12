@@ -8,6 +8,14 @@ Homebrew tap.
 
 ## [Unreleased]
 
+### Added
+
+- `loopy run --json` and `loopy resume --json`: progress as an NDJSON event
+  stream for scripts and outer orchestrators, ending in a `result` event
+  that carries the full loop view (`--race` interleaves all loops on one
+  stream and ends with a `verdict` event). Schema and a worked example in
+  `docs/orchestration.md`.
+
 ## [v0.1.0] - unreleased
 
 The first release: the complete loop engine and review workflow.
