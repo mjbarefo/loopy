@@ -340,6 +340,21 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   remains. The monitor itself still never selects repos: the picker only
   runs when there is no repo at all.
 
+- **2026-06-11 — The repo scan streams into the picker; no pre-scan, no
+  static fallback.** The first cut scanned synchronously with a 1.5s
+  cliff before deciding whether to show the picker — and on a real macOS
+  home it showed the owner the dead-end text instead: a cold-cache walk
+  can blow any fixed budget, and a TCC block on Documents/Desktop makes
+  ReadDir fail silently. Now the picker opens instantly and the scan
+  (`loop.ScanRepos`, emit-callback form; `FindRepos` remains the sync
+  wrapper) streams candidates in behind it with an 8s budget. The cursor
+  rests on the top-ranked repo until the user navigates, then sticks to
+  their choice through re-sorts. When the scan ends empty the picker
+  itself carries the old front-door guidance — `FrontDoor` is gone — and
+  permission-denied near-top directories are reported by name with the
+  System Settings → Privacy & Security path, because a silent TCC block
+  is otherwise indistinguishable from having no repos.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

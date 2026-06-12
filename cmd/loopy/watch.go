@@ -22,15 +22,11 @@ func launchMonitor() error {
 	welcome := true
 	root, err := projectRoot(cwd)
 	if err != nil {
-		// Not a git repo: the monitor has nothing to watch — offer nearby
-		// repos instead of a dead end. (Pipes never reach here; run()
-		// routes them to the help text before launchMonitor.)
-		repos := loop.FindRepos(cwd)
-		if len(repos) == 0 {
-			fmt.Print(tui.FrontDoor(colorEnabled, cwd))
-			return nil
-		}
-		choice, initHere, err := tui.PickRepo(cwd, repos, colorEnabled)
+		// Not a git repo: the monitor has nothing to watch — the picker is
+		// the front door. It opens instantly and the repo scan streams in
+		// behind it. (Pipes never reach here; run() routes them to the
+		// help text before launchMonitor.)
+		choice, initHere, err := tui.PickRepo(cwd, colorEnabled)
 		if err != nil {
 			return err
 		}

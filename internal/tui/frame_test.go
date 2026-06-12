@@ -270,25 +270,54 @@ func TestWelcomeFrame(t *testing.T) {
 	}
 }
 
-func TestFrontDoor(t *testing.T) {
-	out := FrontDoor(false, "~")
+func TestRenderPickerScanStates(t *testing.T) {
+	s := pickerState{width: 100, height: 30, start: "/tmp/nowhere", scanning: true}
+	frame := renderPicker(s)
 	for _, want := range []string{
-		"l o o p y",
 		"engineer loops, not prompts",
-		"~ is not a git repository",
-		"cd into the repo you want loops in, then run: loopy",
-		"git init first",
-		"loopy help",
+		"/tmp/nowhere is not a git repository",
+		"scanning /tmp/nowhere for repositories…",
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("front door missing %q\n%s", want, out)
+		if !strings.Contains(frame, want) {
+			t.Errorf("scanning picker missing %q\n%s", want, frame)
 		}
 	}
-	if strings.Contains(out, "\x1b[") {
-		t.Error("color-off front door contains ANSI escapes")
+
+	// Scan done, nothing found: the guidance replaces the dead end.
+	s.scanning = false
+	frame = renderPicker(s)
+	for _, want := range []string{
+		"no git repositories found under /tmp/nowhere",
+		"cd into the repo you want loops in, then run: loopy",
+		"press g — git init right here",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("empty picker missing %q\n%s", want, frame)
+		}
 	}
-	if colored := FrontDoor(true, "~"); !strings.Contains(colored, "\x1b[36m") {
-		t.Error("color-on front door should carry the cyan identity")
+	if strings.Contains(frame, "could not read") {
+		t.Error("no denied dirs, no privacy hint")
+	}
+
+	// Unreadable dirs get the macOS privacy hint.
+	s.denied = []string{"Documents", "Desktop"}
+	frame = renderPicker(s)
+	for _, want := range []string{
+		"could not read: Documents, Desktop",
+		"Privacy & Security",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("denied picker missing %q\n%s", want, frame)
+		}
+	}
+
+	// A scan still running behind found repos says so.
+	s = pickerState{
+		width: 100, height: 30, start: "/tmp/nowhere", scanning: true,
+		repos: []loop.RepoCandidate{{Path: "/tmp/projects/alpha"}},
+	}
+	if frame := renderPicker(s); !strings.Contains(frame, "…still scanning") {
+		t.Errorf("streaming picker should admit the scan is still running\n%s", frame)
 	}
 }
 

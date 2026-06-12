@@ -178,10 +178,12 @@ expect {
     -ex "is not a git repository" {}
     timeout { fail "nogit: front door never named the problem" }
 }
+# The scan finds nothing here; the picker says what to do instead.
 expect {
     -ex "cd into the repo you want loops in" {}
     timeout { fail "nogit: front door never offered the next move" }
 }
+send "q"
 expect eof
 
 # --- bare launch outside a repo, repos nearby: the picker ---------------------

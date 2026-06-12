@@ -10,11 +10,13 @@ import (
 	"github.com/mjbarefo/loopy/internal/loop"
 )
 
-// The repo picker: bare `loopy` outside a git repository, with repositories
-// discovered nearby. Instead of a dead-end message the front door becomes a
-// chooser — pick a repo, land in its monitor (onboarding takes over from
-// there), or press g to git-init right here. The picker renders nothing but
-// the choice; all repo state stays untouched until the monitor runs.
+// The front door: bare `loopy` outside a git repository. It opens instantly
+// and the repo scan streams in behind it — pick a repo and land in its
+// monitor (onboarding takes over from there), or press g to git-init right
+// here. When the scan ends empty it says what to do instead, including the
+// macOS privacy hint when directories were unreadable. The picker renders
+// nothing but the choice; all repo state stays untouched until the monitor
+// runs.
 
 type pickerState struct {
 	width, height int
@@ -22,20 +24,35 @@ type pickerState struct {
 	start         string // the non-repo directory loopy was launched from
 	repos         []loop.RepoCandidate
 	selected      int
+	navigated     bool // selection sticks only once the user has moved it
+	scanning      bool
+	denied        []string // unreadable near-top dirs (macOS privacy blocks)
 
 	choice   string // the picked repo root; empty until enter
 	initHere bool   // g: git init in start instead
 }
 
+type repoFoundMsg struct{ repo loop.RepoCandidate }
+type scanDoneMsg struct{ denied []string }
+
 // PickRepo runs the chooser and returns the selected repo root, or
 // initHere=true when the user asked to git-init the current directory.
 // Both are zero when the user quit.
-func PickRepo(start string, repos []loop.RepoCandidate, color bool) (choice string, initHere bool, err error) {
+func PickRepo(start string, color bool) (choice string, initHere bool, err error) {
 	m := pickerModel{pickerState{
 		width: 80, height: 24,
-		color: color, start: start, repos: repos,
+		color: color, start: start, scanning: true,
 	}}
-	res, err := tea.NewProgram(m).Run()
+	p := tea.NewProgram(m)
+	go func() {
+		// Send blocks until the program is receiving and is a no-op after
+		// it exits — the scan can outlive an impatient user harmlessly.
+		summary := loop.ScanRepos(start, func(c loop.RepoCandidate) {
+			p.Send(repoFoundMsg{c})
+		})
+		p.Send(scanDoneMsg{summary.Denied})
+	}()
+	res, err := p.Run()
 	if err != nil {
 		return "", false, err
 	}
@@ -54,6 +71,27 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case repoFoundMsg:
+		// Until the user moves, the cursor rests on the top-ranked repo;
+		// after that it follows their repo as the list grows and re-sorts.
+		var keep string
+		if m.navigated && len(m.repos) > 0 {
+			keep = m.repos[m.selected].Path
+		}
+		m.repos = append(m.repos, msg.repo)
+		loop.SortRepoCandidates(m.repos)
+		m.selected = 0
+		for i, r := range m.repos {
+			if keep != "" && r.Path == keep {
+				m.selected = i
+				break
+			}
+		}
+		return m, nil
+	case scanDoneMsg:
+		m.scanning = false
+		m.denied = msg.denied
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -61,16 +99,19 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.repos) > 0 {
 				m.choice = m.repos[m.selected].Path
+				return m, tea.Quit
 			}
-			return m, tea.Quit
+			return m, nil
 		case "g":
 			m.initHere = true
 			return m, tea.Quit
 		case "up", "k":
 			m.selected = clamp(m.selected-1, 0, len(m.repos)-1)
+			m.navigated = true
 			return m, nil
 		case "down", "j":
 			m.selected = clamp(m.selected+1, 0, len(m.repos)-1)
+			m.navigated = true
 			return m, nil
 		}
 	}
@@ -114,9 +155,35 @@ func renderPicker(s pickerState) string {
 		cell{},
 	)
 
-	// The list, windowed around the selection like the monitor's rail.
+	switch {
+	case len(s.repos) == 0 && s.scanning:
+		lines = append(lines, styled(s.color, sgrDim, "   scanning "+abbrevHome(s.start)+" for repositories…"))
+	case len(s.repos) == 0:
+		lines = append(lines, emptyScanLines(s)...)
+	default:
+		lines = append(lines, repoListLines(s)...)
+	}
+
+	lines = append(lines, cell{})
+	lines = append(lines, styled(s.color, sgrDim, " ↑↓ choose · enter open · g git init here · q quit"))
+
+	var b strings.Builder
+	for i := 0; i < s.height; i++ {
+		b.WriteString(padCell(lineAt(lines, i), s.width) + "\n")
+	}
+	return b.String()
+}
+
+// repoListLines is the chooser: cursor and selection bold, loop counts dim,
+// the action line naming exactly what enter will do.
+func repoListLines(s pickerState) []cell {
+	var lines []cell
 	footer := 4 // blank, action line, blank, key hints
-	rows := s.height - len(lines) - footer
+	used := len(lines)
+	if s.height >= 18 {
+		used += len(logoArt) + 1
+	}
+	rows := s.height - used - 2 - footer
 	if rows < 1 {
 		rows = 1
 	}
@@ -147,20 +214,31 @@ func renderPicker(s pickerState) string {
 		}
 		lines = append(lines, joinCells(marker, path, styled(s.color, sgrDim, note)))
 	}
-
-	lines = append(lines, cell{})
-	if len(s.repos) > 0 {
-		action := "enter opens the monitor in " + abbrevHome(s.repos[s.selected].Path)
-		lines = append(lines, styled(s.color, sgrCyan, " "+loop.TruncateDisplay(action, s.width-1)))
+	if s.scanning {
+		lines = append(lines, styled(s.color, sgrDim, "   …still scanning"))
 	}
 	lines = append(lines, cell{})
-	lines = append(lines, styled(s.color, sgrDim, " ↑↓ choose · enter open · g git init here · q quit"))
+	action := "enter opens the monitor in " + abbrevHome(s.repos[s.selected].Path)
+	lines = append(lines, styled(s.color, sgrCyan, " "+loop.TruncateDisplay(action, s.width-1)))
+	return lines
+}
 
-	var b strings.Builder
-	for i := 0; i < s.height; i++ {
-		b.WriteString(padCell(lineAt(lines, i), s.width) + "\n")
+// emptyScanLines is the scan-found-nothing state: the old front-door
+// guidance, plus the macOS privacy hint when directories were unreadable.
+func emptyScanLines(s pickerState) []cell {
+	lines := []cell{
+		plainCell(" no git repositories found under " + abbrevHome(s.start) + "."),
+		cell{},
+		styled(s.color, sgrCyan, "   cd into the repo you want loops in, then run: loopy"),
+		styled(s.color, sgrDim, "   starting fresh? press g — git init right here"),
 	}
-	return b.String()
+	if len(s.denied) > 0 {
+		lines = append(lines, cell{},
+			styled(s.color, sgrYellow, " could not read: "+strings.Join(s.denied, ", ")+" — macOS may be blocking your terminal."),
+			styled(s.color, sgrYellow, " allow it under System Settings → Privacy & Security → Files & Folders, then run loopy again."),
+		)
+	}
+	return lines
 }
 
 // abbrevHome shortens the home directory prefix to ~ for display.
