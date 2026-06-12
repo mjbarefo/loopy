@@ -557,6 +557,19 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   three-second flash. loopy still never commits, pushes, or opens PRs
   (invariant 2); it prints the next move and stays out of the way.
 
+- **2026-06-12 — "Agent blocked" is a park reason, not "stuck".** A gemini
+  loop parked "stuck: no change to the diff" when the truth was the CLI
+  refusing to run headless in an untrusted directory (exit 55, fix:
+  `--skip-trust`). The distinction the engine now draws: a *nonzero agent
+  exit with an untouched worktree* means the CLI never got to work (trust
+  prompt, dead auth, missing binary) — park immediately as
+  `agent blocked (exit N): <the agent's own last words>`, ANSI-stripped and
+  bounded, verbatim discipline as ever. Exit 0 with no change stays "stuck"
+  (the model tried and gave up); nonzero exit *with* changes is judged by
+  the verifier alone (some CLIs exit nonzero after doing real work). First
+  rung of "running a loop is natural": when the environment is the problem,
+  the park reason is the fix.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -30,6 +30,11 @@ Homebrew tap.
   that carries the full loop view (`--race` interleaves all loops on one
   stream and ends with a `verdict` event). Schema and a worked example in
   `docs/orchestration.md`.
+- Engine: a nonzero agent exit that leaves the worktree untouched parks as
+  `agent blocked (exit N): <the agent's own last words>` instead of generic
+  "stuck" — the park reason now names the environment problem (trust prompt,
+  dead auth, missing CLI) and its fix. Exit 0 with no change remains "stuck";
+  a nonzero exit with real changes is still judged by the verifier alone.
 
 ### Fixed
 
