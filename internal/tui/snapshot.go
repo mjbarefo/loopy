@@ -86,19 +86,19 @@ func currentIterationIndex(root string, v loop.LoopView) int {
 	return v.Iterations[last].Index
 }
 
-// liveArtifact picks the file to tail for the live view. A live engine says
+// liveLogPath picks the file a live view should tail. A live engine says
 // what it is doing via the loop's phase record; without one (or between
 // iterations) fall back to whichever of the current iteration's logs was
-// written most recently.
-func liveArtifact(root string, v loop.LoopView) artifact {
+// written most recently. ok is false when no log exists yet.
+func liveLogPath(root string, v loop.LoopView) (path, label string, ok bool) {
 	if v.Live && v.Phase != "" {
 		name := loop.AgentLogFile
 		if v.Phase == loop.PhaseVerify {
 			name = loop.VerifierLogFile
 		}
-		path := filepath.Join(loop.IterationDir(root, v.ID, v.PhaseIteration), name)
-		if _, err := os.Stat(path); err == nil {
-			return loadArtifact(fmt.Sprintf("iter %d · %s", v.PhaseIteration, name), path)
+		p := filepath.Join(loop.IterationDir(root, v.ID, v.PhaseIteration), name)
+		if _, err := os.Stat(p); err == nil {
+			return p, fmt.Sprintf("iter %d · %s", v.PhaseIteration, name), true
 		}
 	}
 	idx := currentIterationIndex(root, v)
@@ -106,18 +106,56 @@ func liveArtifact(root string, v loop.LoopView) artifact {
 	agentPath := filepath.Join(dir, loop.AgentLogFile)
 	verifierPath := filepath.Join(dir, loop.VerifierLogFile)
 
-	path, name := agentPath, loop.AgentLogFile
+	p, name := agentPath, loop.AgentLogFile
 	agentInfo, agentErr := os.Stat(agentPath)
 	verifierInfo, verifierErr := os.Stat(verifierPath)
 	switch {
 	case agentErr != nil && verifierErr != nil:
-		return artifact{label: fmt.Sprintf("iter %d", idx), missing: true}
+		return "", fmt.Sprintf("iter %d", idx), false
 	case agentErr != nil:
-		path, name = verifierPath, loop.VerifierLogFile
+		p, name = verifierPath, loop.VerifierLogFile
 	case verifierErr == nil && verifierInfo.ModTime().After(agentInfo.ModTime()):
-		path, name = verifierPath, loop.VerifierLogFile
+		p, name = verifierPath, loop.VerifierLogFile
 	}
-	return loadArtifact(fmt.Sprintf("iter %d · %s", idx, name), path)
+	return p, fmt.Sprintf("iter %d · %s", idx, name), true
+}
+
+// liveArtifact is the live tab's full tail-first load of that file.
+func liveArtifact(root string, v loop.LoopView) artifact {
+	path, label, ok := liveLogPath(root, v)
+	if !ok {
+		return artifact{label: label, missing: true}
+	}
+	return loadArtifact(label, path)
+}
+
+// The fleet re-reads every live loop's tail twice a second, so it reads the
+// last few KiB, not the viewer cap.
+const fleetTailCapBytes = 8 * 1024
+
+// fleetTailLines is how many tail lines each live strip shows.
+const fleetTailLines = 2
+
+// liveTailLines is the fleet's bounded tail: the last maxLines lines of the
+// log the live engine is writing.
+func liveTailLines(root string, v loop.LoopView, maxLines int) []string {
+	path, _, ok := liveLogPath(root, v)
+	if !ok {
+		return nil
+	}
+	data, _, _, err := loop.TailFile(path, fleetTailCapBytes)
+	if err != nil {
+		return nil
+	}
+	text := strings.TrimRight(string(data), "\n")
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return lines
 }
 
 // latestArtifact scans backwards from the current iteration for the newest

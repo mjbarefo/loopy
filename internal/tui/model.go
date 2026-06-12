@@ -36,6 +36,9 @@ type model struct {
 	selected   int
 	selectedID string // selection is sticky by ID across reloads
 	loadErr    string
+	// tails carries every live loop's short log tail for the fleet view,
+	// reloaded with everything else each tick.
+	tails map[string][]string
 
 	welcome          bool
 	initialized      bool
@@ -138,6 +141,15 @@ func (m *model) reload() {
 	}
 	m.selectedID = m.loops[m.selected].ID
 	m.art = loadTabArtifact(m.root, m.loops[m.selected], m.tab)
+	tails := map[string][]string{}
+	for _, v := range m.loops {
+		if v.Live {
+			if t := liveTailLines(m.root, v, fleetTailLines); len(t) > 0 {
+				tails[v.ID] = t
+			}
+		}
+	}
+	m.tails = tails
 	if m.flash != "" && time.Now().After(m.flashUntil) {
 		m.flash = ""
 	}
@@ -162,6 +174,12 @@ func (m *model) setTab(t tabID) {
 func (m *model) say(format string, args ...any) {
 	m.flash = fmt.Sprintf(format, args...)
 	m.flashUntil = time.Now().Add(flashDuration)
+}
+
+// fleetBrowse mirrors frameState.fleetActive for key handling: the user is
+// browsing the fleet, not a single loop's body.
+func (m model) fleetBrowse() bool {
+	return !m.focusDetail && len(m.loops) >= 2
 }
 
 func (m model) current() *loop.LoopView {
@@ -245,25 +263,52 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "pgup":
-		m.scrollBy(-m.bodyRows())
+		if m.fleetBrowse() {
+			m.selectLoop(-3)
+		} else {
+			m.scrollBy(-m.bodyRows())
+		}
 		return m, nil
 	case "pgdown":
-		m.scrollBy(m.bodyRows())
+		if m.fleetBrowse() {
+			m.selectLoop(3)
+		} else {
+			m.scrollBy(m.bodyRows())
+		}
 		return m, nil
 	case "g", "home":
-		m.scroll = 0
+		if m.fleetBrowse() {
+			m.selectLoop(-len(m.loops))
+		} else {
+			m.scroll = 0
+		}
 		return m, nil
 	case "G", "shift+g", "end":
-		m.scroll = -1
+		if m.fleetBrowse() {
+			m.selectLoop(len(m.loops))
+		} else {
+			m.scroll = -1
+		}
 		return m, nil
 	case "tab":
+		// From the fleet, the first tab press opens the selected loop's
+		// detail at its current view; further presses cycle the views.
+		if m.fleetBrowse() {
+			m.focusDetail = true
+			return m, nil
+		}
 		m.setTab((m.tab + 1) % tabCount)
 		return m, nil
 	case "shift+tab":
+		if m.fleetBrowse() {
+			m.focusDetail = true
+			return m, nil
+		}
 		m.setTab((m.tab + tabCount - 1) % tabCount)
 		return m, nil
 	case "1", "2", "3", "4":
 		if m.current() != nil {
+			m.focusDetail = true // a view key always lands in the detail
 			m.setTab(tabID(key[0] - '1'))
 			return m, nil
 		}
@@ -453,13 +498,22 @@ func (m model) frameState() frameState {
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
 	}
-	// The elapsed clock is the model's: the renderer stays deterministic.
-	if v := m.current(); v != nil && v.Live && v.PhaseStartedAt != "" {
-		if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
-			if d := time.Since(started); d > 0 {
-				s.phaseElapsed = d.Round(time.Second).String()
+	// The elapsed clocks are the model's: the renderer stays deterministic.
+	// The selected loop's drives the activity line; the per-loop map drives
+	// the fleet strips.
+	s.tails = m.tails
+	s.elapsedByID = map[string]string{}
+	for _, v := range m.loops {
+		if v.Live && v.PhaseStartedAt != "" {
+			if started, err := time.Parse(time.RFC3339, v.PhaseStartedAt); err == nil {
+				if d := time.Since(started); d > 0 {
+					s.elapsedByID[v.ID] = d.Round(time.Second).String()
+				}
 			}
 		}
+	}
+	if v := m.current(); v != nil {
+		s.phaseElapsed = s.elapsedByID[v.ID]
 	}
 	return s
 }

@@ -70,6 +70,11 @@ type frameState struct {
 	tab         tabID
 	scroll      int // -1 = follow the tail
 	art         artifact
+	// tails holds every live loop's short log tail and elapsedByID each
+	// live loop's phase clock — the fleet renders all loops at once, not
+	// just the selected one.
+	tails       map[string][]string
+	elapsedByID map[string]string
 	// elapsed strings are precomputed by the model (they need a clock; the
 	// renderer must stay pure and deterministic).
 	phaseElapsed string
@@ -442,6 +447,12 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 		return helpLines(s)
 	}
 
+	// Browsing with several loops shows the fleet — every loop breathing at
+	// once. Enter opens the selected loop's detail below; esc comes back.
+	if s.fleetActive() {
+		return fleetLines(s, width, rows)
+	}
+
 	// The detail header borrows the form's typography: dim labels, plain
 	// values, the status accent on the glyph only — the phrase repeats the
 	// glyph in words, so it stays plain.
@@ -759,10 +770,10 @@ func brokenOnlyLines(s frameState, width int) []cell {
 // is the action, so the key gets the accent.
 func helpLines(s frameState) []cell {
 	keys := []struct{ key, desc string }{
-		{"↑/↓ or j/k", "select loop (list) · scroll (detail)"},
-		{"enter", "focus the detail pane for scrolling"},
-		{"esc", "back to the loop list · dismiss"},
-		{"tab / 1-4", "switch view: overview, live, diff, verifier"},
+		{"↑/↓ or j/k", "select loop (fleet) · scroll (detail)"},
+		{"enter", "open the selected loop's detail"},
+		{"esc", "back to the fleet · dismiss"},
+		{"tab / 1-4", "the open loop's views: overview, live, diff, verifier"},
 		{"n", "start a new loop (goal + the project verifier)"},
 		{"g / G", "jump to top / follow the tail"},
 		{"pgup/pgdn", "page through the body"},
