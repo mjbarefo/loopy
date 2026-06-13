@@ -26,6 +26,12 @@ Homebrew tap.
 
 ### Changed
 
+- Monitor: the loop detail header is restructured for calm and hierarchy. The
+  loop id leads (with its status glyph), a single label-free meta line carries
+  `status · agent · iter · wall`, and the goal stands on its own as the hero
+  with room to breathe — no more `goal`/`agent` labels crowding the top. The
+  activity/park-reason sits below the goal. (Color stays disciplined: the
+  glyph carries the state, the words stay plain.)
 - Monitor wizard: the verifier step is now a **hybrid, composed instantly** —
   no more multi-minute pause on loop creation. The **ask question is the hero**
   (plain English the agent judges, defaulting to your goal); `checks` is an
