@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -238,6 +239,105 @@ func TestWizardSynthesis(t *testing.T) {
 	m = res2.(model)
 	if m.form.verifier == "rm -rf /" {
 		t.Fatal("a cancelled proposal must be dropped")
+	}
+}
+
+// TestMouseWheel: the wheel scrolls whatever sits under it — the detail body
+// by lines, the rail by loops.
+func TestMouseWheel(t *testing.T) {
+	// 120x14 is dense: content starts at row 2, the rail at column 0, and the
+	// overview body (8 lines) outgrows its 4 rows — so it can actually scroll.
+	m := model{loops: sampleLoops(), selected: 0, width: 120, height: 14, scroll: -1}
+	railW, _ := m.frameState().railArea()
+	detailX := railW + 2
+
+	res, _ := m.Update(tea.MouseWheelMsg{X: detailX + 5, Y: 9, Button: tea.MouseWheelUp})
+	m = res.(model)
+	if m.scroll < 0 {
+		t.Fatal("wheel up over the detail body should leave the tail")
+	}
+	res, _ = m.Update(tea.MouseWheelMsg{X: detailX + 5, Y: 9, Button: tea.MouseWheelDown})
+	m = res.(model)
+	if m.scroll != -1 {
+		t.Fatalf("wheel down to the bottom should re-engage tail follow, scroll=%d", m.scroll)
+	}
+
+	res, _ = m.Update(tea.MouseWheelMsg{X: 3, Y: 2, Button: tea.MouseWheelDown})
+	m = res.(model)
+	if m.selected != 1 {
+		t.Fatalf("wheel over the rail should move the selection, selected=%d", m.selected)
+	}
+}
+
+// TestMouseClick: rail rows select, nav names switch views (landing on the
+// tab's home scroll), confirms ignore clicks entirely.
+func TestMouseClick(t *testing.T) {
+	m := model{loops: sampleLoops(), selected: 0, width: 120, height: 36, scroll: -1}
+	res, _ := m.Update(tea.MouseClickMsg{X: 4, Y: 5, Button: tea.MouseLeft})
+	m = res.(model)
+	if m.selected != 1 {
+		t.Fatalf("clicking the parked rail row should select it, selected=%d", m.selected)
+	}
+
+	m = model{loops: sampleLoops(), selected: 0, width: 120, height: 36, scroll: -1}
+	railW, _ := m.frameState().railArea()
+	res, _ = m.Update(tea.MouseClickMsg{X: 2 + railW + 2 + 20, Y: 8, Button: tea.MouseLeft})
+	m = res.(model)
+	if m.tab != tabDiff {
+		t.Fatalf("clicking the diff name should switch the view, tab=%d", m.tab)
+	}
+	if m.scroll != 0 {
+		t.Fatalf("the diff tab opens answer-first at the top, scroll=%d", m.scroll)
+	}
+
+	m = model{loops: sampleLoops(), selected: 0, width: 120, height: 36, confirmAccept: true}
+	res, _ = m.Update(tea.MouseClickMsg{X: 4, Y: 5, Button: tea.MouseLeft})
+	m = res.(model)
+	if m.selected != 0 || !m.confirmAccept {
+		t.Fatal("a pending confirm must ignore clicks — decisions stay explicit")
+	}
+
+	m = model{welcome: true, width: 120, height: 36}
+	res, _ = m.Update(tea.MouseClickMsg{X: 4, Y: 5, Button: tea.MouseLeft})
+	m = res.(model)
+	if m.welcome {
+		t.Fatal("a click should dismiss the welcome like any key")
+	}
+}
+
+// TestCopyNextCommand: c sends the next command via OSC 52 — the selected
+// loop's, or on a quiet rail the newest accepted loop's apply command. A
+// running loop's "next" is this monitor; nothing to copy.
+func TestCopyNextCommand(t *testing.T) {
+	m := model{loops: sampleLoops(), selected: 1} // parked
+	res, cmd := m.handleKey(press('c', "c"))
+	m = res.(model)
+	if cmd == nil {
+		t.Fatal("c should produce the clipboard command")
+	}
+	if !strings.Contains(m.flash, "loopy review flaky-importer") {
+		t.Fatalf("the flash should name what was copied, got %q", m.flash)
+	}
+
+	m = model{loops: sampleLoops(), selected: 0} // running
+	res, cmd = m.handleKey(press('c', "c"))
+	m = res.(model)
+	if cmd != nil || m.flash == "" {
+		t.Fatal("a running loop has nothing worth copying; say so")
+	}
+
+	loops := sampleLoops()
+	for i := range loops {
+		loops[i].Status = loop.StatusAccepted
+	}
+	loops[1].NextCommand = "git apply .loopy/loops/flaky-importer/final-diff.patch"
+	loops[1].EndedAt = "2026-06-13T10:00:00Z"
+	loops[0].NextCommand = ""
+	m = model{loops: loops, selected: -1} // quiet rail
+	res, cmd = m.handleKey(press('c', "c"))
+	m = res.(model)
+	if cmd == nil || !strings.Contains(m.flash, "git apply") {
+		t.Fatalf("the quiet rail should copy the shown apply command, flash=%q", m.flash)
 	}
 }
 

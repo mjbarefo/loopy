@@ -10,6 +10,14 @@ Homebrew tap.
 
 ### Added
 
+- Monitor: mouse support. The wheel scrolls the pane under the pointer —
+  the detail body by lines, the loop rail by selection; clicking a rail row
+  selects that loop, clicking a view name in the nav switches to it.
+  Decisions stay explicit: pending y/n confirmations ignore clicks, and the
+  wizard remains keyboard-driven. Since mouse capture takes over native
+  text selection (hold Option/Shift to bypass), the new `c` key copies the
+  next command to the system clipboard via OSC 52 — on a quiet rail it
+  copies the newest accepted loop's `git apply` command, the one on screen.
 - Monitor: the diff and verifier tabs answer first, evidence below. The
   diff tab opens with "N files changed · +A -D" and a per-file list before
   the patch (adds green, removals red, headers bold); the verifier tab
