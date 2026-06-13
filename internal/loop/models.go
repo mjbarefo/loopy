@@ -61,9 +61,10 @@ func (s Stage) kind() StageKind {
 	return s.Kind
 }
 
-// descriptor is the human-facing one-liner recorded in StageResult.Cmd: the
-// shell command for a command stage, the question for an ask stage.
-func (s Stage) descriptor() string {
+// Descriptor is the human-facing one-liner recorded in StageResult.Cmd and
+// shown in the monitor: the shell command for a command stage, the question
+// for an ask stage.
+func (s Stage) Descriptor() string {
 	if s.kind() == KindAsk {
 		return s.Ask
 	}

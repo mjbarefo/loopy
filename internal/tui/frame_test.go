@@ -280,6 +280,32 @@ func TestFrameVerifierTabScoreboard(t *testing.T) {
 	}
 }
 
+// TestFrameVerifierTabAskStage: an ask stage in the scoreboard wears an "ask"
+// tag (a word, not just color) and shows its question, so the human sees which
+// greens are a mechanical check and which are the agent's judgment.
+func TestFrameVerifierTabAskStage(t *testing.T) {
+	s := wideState()
+	s.tab = tabVerifier
+	s.loops[0].Verifier = append(s.loops[0].Verifier,
+		loop.Stage{Name: "judge", Kind: loop.KindAsk, Ask: "does the importer handle quoted newlines?"})
+	s.loops[0].Iterations[2].Stages = []loop.StageResult{
+		{Name: "vet", Cmd: "go vet ./...", ExitCode: 0, DurationMS: 300},
+		{Name: "test", Cmd: "go test ./...", ExitCode: 0, DurationMS: 900},
+		{Name: "judge", Kind: loop.KindAsk, Cmd: "does the importer handle quoted newlines?", ExitCode: 0, DurationMS: 4200},
+	}
+	s.art = artifact{label: "iter 2 · verifier.log", iter: 2, lines: []string{
+		"=== stage judge (ask claude): does the importer handle quoted newlines?",
+		"=== ask verdict: PASS",
+	}}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	for _, want := range []string{"✓ judge", "ask does the importer handle quoted newlines?", "green: the goal is met"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("ask-stage scoreboard missing %q\n%s", want, frame)
+		}
+	}
+}
+
 // TestFrameVerifierTabGreen: a green run says so in plain words and keeps the
 // whole log bright — only the markers recede.
 func TestFrameVerifierTabGreen(t *testing.T) {
@@ -566,8 +592,24 @@ func TestFrameNewLoopWizard(t *testing.T) {
 		}
 	}
 
-	// Step 3: the verifier, editable, with its provenance. The agent designs
-	// it; while synthesizing the step says so.
+	// Step 3: the hybrid verifier — command gates plus an ask question, both
+	// editable, composed instantly (no blocking synthesis on arrival).
+	s.form = base
+	s.form.step = stepVerifier
+	s.form.ask = "is the importer fixed and tests green?"
+	frame = renderFrame(s)
+	for _, want := range []string{
+		"checks  go test ./...", "ask     is the importer fixed",
+		"claude answers PASS/FAIL each iteration", "a hybrid", "↑↓ switches",
+		"tab asks claude to design the checks",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("hybrid verifier step missing %q\n%s", want, frame)
+		}
+	}
+
+	// tab is the optional polish: it still asks the agent to design the gates,
+	// and while it works the step says so.
 	s.form = base
 	s.form.step = stepVerifier
 	s.form.synthesizing = true
@@ -579,24 +621,21 @@ func TestFrameNewLoopWizard(t *testing.T) {
 		}
 	}
 
-	// A landed proposal: attributed, editable, the human signs with enter.
+	// A landed proposal is attributed in the checks field.
 	s.form = base
 	s.form.step = stepVerifier
 	s.form.proposedBy = "claude"
 	s.form.edited = true
 	s.form.verifier = "test -f AGENTS.md && make check"
-	frame = renderFrame(s)
-	for _, want := range []string{"designed by claude for this goal", "tab asks claude again", "exit 0 means the goal is met"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("proposed verifier step missing %q\n%s", want, frame)
-		}
+	if !strings.Contains(renderFrame(s), "designed by claude for this goal") {
+		t.Error("a landed proposal should be attributed to its agent")
 	}
 
-	// Synthesis failed: inference is the fallback, and tab re-asks.
+	// No proposal yet: the gates are the inferred fallback, tab can tighten them.
 	s.form = base
 	s.form.step = stepVerifier
-	if !strings.Contains(renderFrame(s), "the agent had nothing; inferred from go.mod") {
-		t.Error("a fallback-to-inference verifier should say the agent had nothing")
+	if !strings.Contains(renderFrame(s), "inferred from go.mod") {
+		t.Error("an inferred verifier should name its source")
 	}
 
 	// Step 4: budget, hard caps named.
@@ -620,6 +659,15 @@ func TestFrameNewLoopWizard(t *testing.T) {
 	s.form.picked = map[int]bool{0: true, 1: true}
 	if !strings.Contains(renderFrame(s), "enter races 2 agents") {
 		t.Error("a multi-agent confirm must say it races")
+	}
+
+	// A hybrid confirm lists both parts — the command verbatim and the ask
+	// stage as the judgment it is.
+	s.form = base
+	s.form.step = stepConfirm
+	s.form.ask = "is the importer fixed?"
+	if frame := renderFrame(s); !strings.Contains(frame, "go test ./...") || !strings.Contains(frame, "ask: is the importer fixed?") {
+		t.Errorf("hybrid confirm must show both the command and the ask stage\n%s", frame)
 	}
 
 	// No agents registered, none detected: the step says how to proceed.

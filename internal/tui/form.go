@@ -12,15 +12,16 @@ import (
 
 // The new-loop wizard: press n and the monitor walks through every decision
 // a loop needs — goal, agent, verifier, budget, confirm — one question per
-// screen, plain words, esc steps back. Once the goal and agent are set, the
-// agent designs the verifier for that goal up front (synthesis), so a loop is
-// never started against a blind inferred default that cannot tell whether the
-// goal was met; inference is the fallback when synthesis fails, and the human
-// always signs the verifier with enter. Loops are created with the same
-// domain call the CLI uses and handed to detached engines via the resume
-// path; the monitor itself never runs an engine. Marking more than one agent
-// races them: one loop per agent, ranked by `loopy judge` when they have all
-// parked.
+// screen, plain words, esc steps back. The verifier step lands instantly on a
+// hybrid: inferred command gates (fast, key-free) plus an ask stage whose
+// question defaults to the goal — the agent judges, each iteration, whether
+// the goal is met, where no shell command can. Either part can be cleared
+// (command-only or ask-only); the human always signs with enter. tab is the
+// optional polish: it asks the agent to design tighter command gates up front.
+// Loops are created with the same domain call the CLI uses and handed to
+// detached engines via the resume path; the monitor itself never runs an
+// engine. Marking more than one agent races them: one loop per agent, ranked
+// by `loopy judge` when they have all parked.
 
 type wizardStep int
 
@@ -48,13 +49,20 @@ type formState struct {
 	cursor       int
 	picked       map[int]bool // marked agents; more than one races
 
-	// Verifier: an editable command, prefilled from the project default or
-	// inference. The prefill keeps its multi-stage form until edited.
+	// Verifier: a hybrid of command gates and an ask stage. `verifier` is the
+	// editable command(s), prefilled from the project default or inference (it
+	// keeps its multi-stage form until edited). `ask` is the question the
+	// agent answers each iteration, defaulting to the goal; clearing it drops
+	// the ask stage, clearing `verifier` drops the gates. verifierField picks
+	// which of the two the keystrokes edit (0 gates, 1 ask).
 	verifier      string
 	prefillStages []loop.Stage
 	stored        bool   // prefill is already the project default
 	inferSource   string // non-empty when the prefill was inferred
 	edited        bool
+	ask           string // the ask-stage question; defaults to the goal
+	askEdited     bool
+	verifierField int // 0 command gates, 1 ask question
 
 	// Synthesis: arriving at the verifier step asks the selected agent to
 	// design a goal-testing command (async — the monitor keeps breathing);
@@ -129,9 +137,10 @@ func (f formState) selectedAgents() []string {
 	return out
 }
 
-// resolvedStages is the verifier the loop will actually run: the prefilled
-// stages while untouched, otherwise one stage from the edited command.
-func (f formState) resolvedStages() []loop.Stage {
+// commandStages is the gate portion of the verifier: the prefilled stages
+// while untouched, otherwise one stage from the edited command. Empty when the
+// command field is blank (an ask-only verifier).
+func (f formState) commandStages() []loop.Stage {
 	cmd := strings.TrimSpace(f.verifier)
 	if cmd == "" {
 		return nil
@@ -140,6 +149,18 @@ func (f formState) resolvedStages() []loop.Stage {
 		return f.prefillStages
 	}
 	return []loop.Stage{{Name: "verify", Cmd: cmd}}
+}
+
+// resolvedStages is the verifier the loop will actually run: the command gates
+// first (fast, key-free, short-circuit), then the ask stage when a question is
+// set. Either part may be empty; both empty is no verifier, which startLoops
+// refuses.
+func (f formState) resolvedStages() []loop.Stage {
+	stages := f.commandStages()
+	if q := strings.TrimSpace(f.ask); q != "" {
+		stages = append(stages, loop.Stage{Name: "judge", Kind: loop.KindAsk, Ask: q})
+	}
+	return stages
 }
 
 // startLoops creates one loop per selected agent and hands each to a
@@ -167,13 +188,15 @@ func startLoops(root string, f formState) ([]string, error) {
 	}
 
 	// Starting with an untouched inferred verifier is the confirmation that
-	// stores it as the project default — the CLI's confirm-once contract.
-	if f.inferSource != "" && !f.edited {
+	// stores it as the project default — the CLI's confirm-once contract. Only
+	// the command gates are stored: the ask stage's question is goal-specific
+	// and must never become a default for future loops.
+	if f.inferSource != "" && !f.edited && len(f.prefillStages) > 0 {
 		cfg, err := loop.LoadConfig(root)
 		if err != nil {
 			return nil, err
 		}
-		cfg.DefaultVerifier = stages
+		cfg.DefaultVerifier = f.prefillStages
 		if err := loop.SaveConfig(root, cfg); err != nil {
 			return nil, err
 		}
@@ -330,28 +353,28 @@ func verifierLines(s frameState, width int) []cell {
 			affordance(s, "esc skips the proposal and lets you write the verifier yourself"),
 		}
 	}
-	source := "type the command that proves the goal is met"
+	source := "shell that gates green: exit 0 passes — leave blank to judge only"
 	switch {
 	case f.proposedBy != "" && f.verifier != "":
-		source = "designed by " + f.proposedBy + " for this goal — edit freely; enter is your sign-off"
+		source = "designed by " + f.proposedBy + " for this goal — edit freely"
 	case f.edited:
-		source = "edited — used as a single stage for this loop"
+		source = "edited — one stage for this loop"
 	case f.stored:
 		source = "the project default — edit to override for this loop"
 	case f.inferSource != "":
-		source = "the agent had nothing; inferred from " + f.inferSource + " — edit it or press tab to ask again"
+		source = "inferred from " + f.inferSource + " — edit, or tab asks " + agent + " for tighter gates"
 	}
-	ask := "tab asks " + agent + " to design one"
-	if f.proposedBy != "" {
-		ask = "tab asks " + agent + " again"
-	}
+	askSource := agent + " answers PASS/FAIL each iteration — leave blank to skip the judge"
 	return []cell{
-		inputCell(s, "verifier  ", f.verifier, true, width),
-		styled(s.color, sgrDim, loop.TruncateDisplay("          "+source, width)),
+		inputCell(s, "checks  ", f.verifier, f.verifierField == 0, width),
+		styled(s.color, sgrDim, loop.TruncateDisplay("        "+source, width)),
 		{},
-		styled(s.color, sgrDim, "this command decides green: exit 0 means the goal is met."),
+		inputCell(s, "ask     ", f.ask, f.verifierField == 1, width),
+		styled(s.color, sgrDim, loop.TruncateDisplay("        "+askSource, width)),
 		{},
-		affordance(s, ask+" · enter continues · esc goes back"),
+		styled(s.color, sgrDim, "a hybrid — gates check fast, the agent judges the rest. ↑↓ switches."),
+		{},
+		affordance(s, "tab asks "+agent+" to design the checks · enter continues · esc goes back"),
 	}
 }
 
@@ -367,13 +390,22 @@ func budgetLines(s frameState) []cell {
 	}
 }
 
+// stageSummary renders a stage for the confirm screen: the command verbatim,
+// or "ask: <question>" so an ask stage reads as the judgment it is.
+func stageSummary(st loop.Stage) string {
+	if st.Kind == loop.KindAsk {
+		return "ask: " + st.Ask
+	}
+	return st.Cmd
+}
+
 func confirmLines(s frameState, width int) []cell {
 	f := s.form
 	agents := strings.Join(f.selectedAgents(), " + ")
 	stages := f.resolvedStages()
 	parts := make([]string, len(stages))
 	for i, st := range stages {
-		parts[i] = st.Cmd
+		parts[i] = stageSummary(st)
 	}
 	action := "enter starts the loop in its own worktree — your checkout is never touched"
 	if len(f.selectedAgents()) > 1 {

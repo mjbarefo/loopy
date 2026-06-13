@@ -33,8 +33,9 @@ note "workbench: $repo"
 exec sh -c "cd '$repo' && git init -q -b main && git config user.email smoke@loopy.local && git config user.name smoke && echo hello > README.md && git add . && git commit -qm init"
 exec sh -c "cd '$repo' && '$bin' init > /dev/null && git add .gitignore && git commit -qm 'ignore .loopy'"
 # The agent echoes a verifier command as its final line, so the wizard's
-# auto-synthesis lands a deterministic proposal ("false" is red, as a fresh
-# verifier should be); as a loop agent it changes nothing, so loops park.
+# optional tab-synthesis lands a deterministic gate proposal ("false" is red,
+# as a fresh verifier should be); as a loop agent it changes nothing, so loops
+# park.
 exec sh -c "cd '$repo' && '$bin' agent add idle --cmd 'echo false' --default > /dev/null"
 exec sh -c "cd '$repo' && '$bin' run 'park immediately for the smoke test' --verify 'echo still failing; false' --max-iters 1 > /dev/null 2>&1; true"
 cd $repo
@@ -160,7 +161,7 @@ send "q"
 expect eof
 
 # --- the new-loop wizard, end to end ------------------------------------------
-note "wizard: goal → agent → auto-designed verifier → budget → start"
+note "wizard: goal → agent → instant hybrid verifier (tab polish) → budget → start"
 set stty_init "rows 30 columns 100"
 spawn $bin watch
 expect {
@@ -178,11 +179,18 @@ expect {
     timeout { fail "wizard: goal never advanced to the agent step" }
 }
 send "\r"
-# Advancing past the agent hands the goal to it to design the verifier; the
-# proposal lands attributed in the editable field (idle echoes a command).
+# The verifier step lands instantly as a hybrid — command gates plus an ask
+# stage whose question defaults to the goal — with no blocking agent call.
+expect {
+    -ex "answers PASS/FAIL each iteration" {}
+    timeout { fail "wizard: the verifier step never composed the hybrid" }
+}
+# tab is the optional polish: it asks the agent to design the gates; idle
+# echoes a command, which lands attributed in the editable checks field.
+send "\t"
 expect {
     -ex "designed by idle for this goal" {}
-    timeout { fail "wizard: the agent's verifier proposal never landed" }
+    timeout { fail "wizard: tab never landed the agent's gate proposal" }
 }
 send "\r"
 expect {

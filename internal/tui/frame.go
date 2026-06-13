@@ -897,9 +897,18 @@ func verifierHeaderLines(s frameState, width int) []cell {
 		}
 	}
 	for i, st := range stages {
+		// An ask stage is judged by the agent, not a shell command; tag it so
+		// the human sees which greens are mechanical and which are a judgment.
+		// The tag is a word, never just color — NO_COLOR stays legible.
+		tag := ""
+		descBudget := width - nameW - 12
+		if st.Kind == loop.KindAsk {
+			tag = "ask "
+			descBudget -= 4
+		}
 		if i >= len(it.Stages) {
 			lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(
-				" · "+loop.PadDisplay(st.Name, nameW)+"  "+st.Cmd+"  did not run", width)))
+				" · "+loop.PadDisplay(st.Name, nameW)+"  "+tag+st.Descriptor()+"  did not run", width)))
 			continue
 		}
 		r := it.Stages[i]
@@ -907,13 +916,19 @@ func verifierHeaderLines(s frameState, width int) []cell {
 		if r.ExitCode != 0 {
 			glyph, sgr = "✗", sgrRed
 		}
-		lines = append(lines, joinCells(
+		row := []cell{
 			plainCell(" "),
 			styled(s.color, sgr, glyph),
-			plainCell(" "+loop.PadDisplay(st.Name, nameW)),
-			plainCell("  "+loop.TruncateDisplay(st.Cmd, width-nameW-12)),
+			plainCell(" " + loop.PadDisplay(st.Name, nameW) + "  "),
+		}
+		if tag != "" {
+			row = append(row, styled(s.color, sgrDim, tag))
+		}
+		row = append(row,
+			plainCell(loop.TruncateDisplay(st.Descriptor(), descBudget)),
 			styled(s.color, sgrDim, "  ("+loop.HumanDuration(time.Duration(r.DurationMS)*time.Millisecond)+")"),
-		))
+		)
+		lines = append(lines, joinCells(row...))
 	}
 	switch {
 	case it.Green && it.Baseline:
