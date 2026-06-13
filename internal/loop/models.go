@@ -19,11 +19,55 @@ const (
 	StatusRejected = "rejected" // human rejected at review
 )
 
-// Stage is one verifier command. Stages run in order and short-circuit on the
-// first failure, so order them fast-to-slow.
+// StageKind distinguishes how a verifier stage produces its verdict. The zero
+// value ("") is a command stage, so existing loop.json files keep parsing.
+//
+// "judge" is deliberately NOT reused here: that word is the deterministic,
+// no-API-key ranking of competing green loops (see judge.go). An ask stage is
+// the opposite — it spends an agent call (and its keys) and is not
+// reproducible — so it gets its own plain word.
+type StageKind string
+
+const (
+	// KindCommand runs a shell command; exit zero is green. Fast, reproducible,
+	// needs no API key — the only kind inference and the demo produce.
+	KindCommand StageKind = "command"
+	// KindAsk asks a registered agent a yes/no question about the worktree; a
+	// PASS verdict is green. Use it only where a shell command can't express
+	// "done". The human's accept/reject is the backstop for its fuzziness.
+	KindAsk StageKind = "ask"
+)
+
+// Stage is one verifier stage. Stages run in order and short-circuit on the
+// first failure, so order them fast-to-slow (and cheap-to-expensive: an ask
+// stage only runs once the command gates ahead of it are green).
 type Stage struct {
-	Name string `json:"name"`
-	Cmd  string `json:"cmd"`
+	Name string    `json:"name"`
+	Kind StageKind `json:"kind,omitempty"` // "" == command
+	Cmd  string    `json:"cmd,omitempty"`  // command stages: the shell command
+	Ask  string    `json:"ask,omitempty"`  // ask stages: the yes/no question
+	// Agent optionally overrides which registered agent answers an ask stage;
+	// empty means the loop's own agent. Reserved for a future opt-in — the
+	// wizard never sets it today.
+	Agent string `json:"agent,omitempty"`
+}
+
+// kind returns the stage's effective kind, treating the zero value as a
+// command stage.
+func (s Stage) kind() StageKind {
+	if s.Kind == "" {
+		return KindCommand
+	}
+	return s.Kind
+}
+
+// descriptor is the human-facing one-liner recorded in StageResult.Cmd: the
+// shell command for a command stage, the question for an ask stage.
+func (s Stage) descriptor() string {
+	if s.kind() == KindAsk {
+		return s.Ask
+	}
+	return s.Cmd
 }
 
 // Budget holds the loop's hard caps. Exhaustion parks the loop; budgets are
@@ -100,7 +144,10 @@ func (l Loop) Done() bool {
 
 // StageResult records one verifier stage's outcome inside an iteration.
 type StageResult struct {
-	Name       string `json:"name"`
+	Name string    `json:"name"`
+	Kind StageKind `json:"kind,omitempty"` // "" == command
+	// Cmd is the stage descriptor: the shell command for a command stage, the
+	// question for an ask stage.
 	Cmd        string `json:"cmd"`
 	ExitCode   int    `json:"exit_code"`
 	DurationMS int64  `json:"duration_ms"`

@@ -695,6 +695,38 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   decisions above; the machinery was already there but opt-in — this flips
   it to the default.
 
+- **2026-06-13 — Verifiers become a spectrum: command · ask · hybrid.** A
+  verifier stage's verdict can now come from a shell command (today's kind,
+  the zero value) or from a registered agent answering a yes/no question
+  about the worktree (`Kind: "ask"`, `Ask:` the question). A hybrid is just
+  the ordered mix the wizard will reach for: cheap deterministic gates
+  first, an ask stage last, so the expensive key-requiring stage only runs
+  once the mechanical gates are green. **Why this is safe:** loopy never
+  merges (invariant 2) — the human's accept/reject is the real seal, so a
+  verifier may be fuzzy where shell can't reach; a wrong ask verdict costs
+  at most a wasted iteration or a rejected diff, never a bad merge. **Why
+  it retires the synthesis pause:** an ask stage needs no design (its
+  question is the goal restated), so loop creation is instant and the
+  agent's exploration moves inline to verify-time, free-riding the
+  iteration the human was already waiting on — demoting #31's up-front
+  synthesis from default gate to optional polish. Settled calls: the ask
+  agent is the **loop's own agent** (it grades its own homework, accepted
+  because the human seals); verdict protocol is a final `PASS` /
+  `FAIL: <reason>` line, **fail-closed** on a timeout, an unrunnable agent,
+  or a missing verdict; **judge-only verifiers are allowed** (no
+  deterministic floor required — pure-prose goals); `AskTimeout` is 2 min.
+  Naming: the kind is **`ask`**, not "judge" — "judge" is the deterministic
+  no-API-key race-mode ranking (`judge.go`), the opposite of this stage on
+  every axis. Invariant 4 holds: an ask stage shell-executes the registered
+  agent exactly as synthesis does; loopy still makes no model call of its
+  own, and inference/the demo stay command-only so the no-key path is
+  untouched. Stuck detection: a varying ask reason won't trip
+  `SameFailureRepeats`, so ask loops lean on `NoChangeRepeats` (diff
+  unchanged) plus the hard budget. Full design in `docs/verifier-spectrum.md`.
+  This slice is the engine (`Stage`/`StageResult` fields, `RunVerifier` ask
+  branch, `runAskStage`); the wizard composing hybrids by default and the
+  monitor's per-stage kind glyph are the follow-up.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

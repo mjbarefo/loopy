@@ -8,6 +8,22 @@ Homebrew tap.
 
 ## [Unreleased]
 
+### Added
+
+- Verifier stages can now be an **ask** stage: instead of a shell command, a
+  stage poses a yes/no question and a registered agent answers it about the
+  current worktree (`PASS` / `FAIL: <reason>`). Use it for goals no shell
+  command can check — "is the prose accurate?", "does this read cleanly?" —
+  alongside the deterministic gates (`test -f x && make check`) that stay
+  fast and key-free. Stages still run fast-to-slow and short-circuit, so an
+  ask stage only spends an agent call once the command gates ahead of it are
+  green. An ask stage's `FAIL` reason becomes the next iteration's feedback,
+  the same as a failing command's output. It fails closed (a timeout, an
+  unrunnable agent, or a missing verdict all read as `FAIL`) and never makes
+  a model call of loopy's own — it runs your registered agent, so the
+  no-API-key demo and inference stay command-only. (Engine support;
+  wizard/monitor surfacing to follow. Design: `docs/verifier-spectrum.md`.)
+
 ### Changed
 
 - Monitor wizard: the verifier is now designed by the agent for your goal,
