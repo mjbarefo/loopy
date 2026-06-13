@@ -633,6 +633,27 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   (pure, stdlib), and `IterationView` now carries its per-stage results —
   the scoreboard renders from the view-model, never by parsing the log.
 
+- **2026-06-13 — Mouse in the monitor: wheel scrolls, clicks navigate,
+  decisions stay on the keyboard.** The owner wants herdr's feel: scroll
+  with the wheel, point at things. The calls: cell-motion tracking (not
+  all-motion — no hover effects, no event flood), with hit-testing as a
+  **pure function over frameState** (`internal/tui/hittest.go`) whose
+  arithmetic mirrors renderFrame's — the layout is deterministic, so "what
+  is under (x, y)" is unit-testable like the frames themselves. Wheel over
+  the rail moves the selection, over the detail body scrolls it; clicking a
+  rail row selects, a nav name switches views, the body takes scroll focus.
+  **Clicks never decide**: pending y/n confirms ignore the mouse entirely,
+  and the wizard stays keyboard-driven. Mouse capture costs native text
+  selection (Option-drag bypasses it), so the `c` key covers the real copy
+  need — the next command — via OSC 52 (works in iTerm2/kitty/WezTerm;
+  Terminal.app ignores it; the help line says so). On a quiet rail `c`
+  copies the newest accepted loop's `git apply`, the exact command shown.
+  Selection and tab switches now refresh only the artifact
+  (`reloadArtifact`) instead of re-reading every loop — the 500ms tick owns
+  disk truth; this also keeps the handlers unit-testable without a disk.
+  The PTY smoke now injects real SGR mouse sequences and asserts the OSC 52
+  write reaches the terminal.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

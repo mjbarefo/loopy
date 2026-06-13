@@ -186,10 +186,28 @@ func (m *model) selectLoop(delta int) {
 	if next < 0 || next >= len(m.loops) {
 		return // a quiet rail has nothing to select
 	}
-	m.selected = next
-	m.selectedID = m.loops[m.selected].ID
-	m.scroll = -1
-	m.reload()
+	m.selectTo(next)
+}
+
+// selectTo moves the selection to a specific loop (rail clicks land here).
+// It re-points the artifact only; the tick owns re-reading the loops.
+func (m *model) selectTo(i int) {
+	if i < 0 || i >= len(m.loops) {
+		return
+	}
+	m.selected = i
+	m.selectedID = m.loops[i].ID
+	m.resetScroll()
+	m.reloadArtifact()
+}
+
+// reloadArtifact refreshes the detail pane's artifact for the current
+// selection and tab.
+func (m *model) reloadArtifact() {
+	m.art = artifact{}
+	if v := m.current(); v != nil {
+		m.art = loadTabArtifact(m.root, *v, m.tab)
+	}
 }
 
 // nextVisible moves the selection delta steps over rail-visible loops —
@@ -216,13 +234,18 @@ func nextVisible(loops []loop.LoopView, from, delta int) int {
 
 func (m *model) setTab(t tabID) {
 	m.tab = t
-	// Live (and the overview's tail) follow the tail; the diff and verifier
-	// tabs lead with their answer-first header, so they open at the top.
+	m.resetScroll()
+	m.reloadArtifact()
+}
+
+// resetScroll is the tab's home position: live (and the overview's tail)
+// follow the tail; the diff and verifier tabs lead with their answer-first
+// header, so they open at the top.
+func (m *model) resetScroll() {
 	m.scroll = -1
-	if t == tabDiff || t == tabVerifier {
+	if m.tab == tabDiff || m.tab == tabVerifier {
 		m.scroll = 0
 	}
-	m.reload()
 }
 
 func (m *model) say(format string, args ...any) {
@@ -251,6 +274,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSynthDone(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.MouseWheelMsg:
+		return m.handleWheel(msg)
+	case tea.MouseClickMsg:
+		return m.handleClick(msg)
+	}
+	return m, nil
+}
+
+// handleWheel scrolls whatever pane sits under the pointer: the detail body
+// by three lines per notch, the rail by one loop.
+func (m model) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	if m.welcome || m.form.active {
+		return m, nil
+	}
+	dir := 0
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		dir = -1
+	case tea.MouseWheelDown:
+		dir = 1
+	default:
+		return m, nil
+	}
+	switch hitTest(m.frameState(), msg.X, msg.Y).kind {
+	case hitRail:
+		m.selectLoop(dir)
+	case hitDetail, hitTab:
+		m.scrollBy(dir * 3)
+	}
+	return m, nil
+}
+
+// handleClick: a rail row selects its loop, a nav name switches the view, the
+// detail body takes scroll focus. Decisions stay explicit — while a y/n
+// confirm is pending, clicks are ignored; the wizard stays keyboard-driven.
+func (m model) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+	if m.welcome {
+		m.welcome = false
+		return m, nil
+	}
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+	if m.form.active || m.confirmAbort || m.confirmDelete || m.confirmAccept || m.confirmReject {
+		return m, nil
+	}
+	switch t := hitTest(m.frameState(), msg.X, msg.Y); t.kind {
+	case hitRail:
+		if t.loopIdx >= 0 {
+			m.focusDetail = false
+			m.selectTo(t.loopIdx)
+		}
+	case hitTab:
+		m.setTab(t.tab)
+	case hitDetail:
+		m.focusDetail = true
 	}
 	return m, nil
 }
@@ -465,6 +548,24 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.exitHint = v.NextCommand
 		}
 		return m, tea.Quit
+	case "c":
+		// Copy the next command via OSC 52. A running loop's next command is
+		// this monitor itself — nothing worth copying; the quiet rail copies
+		// the newest accepted loop's apply command (the one it shows).
+		cmd := ""
+		if v := m.current(); v != nil {
+			if v.Status != loop.StatusRunning {
+				cmd = v.NextCommand
+			}
+		} else if v := newestAcceptedWithCommand(m.loops); v != nil {
+			cmd = v.NextCommand
+		}
+		if cmd == "" {
+			m.say("nothing to copy — no next command here")
+			return m, nil
+		}
+		m.say("sent to the clipboard: %s", cmd)
+		return m, tea.SetClipboard(cmd)
 	}
 	return m, nil
 }
@@ -697,6 +798,10 @@ func (m model) View() tea.View {
 	}
 	v := tea.NewView(frame)
 	v.AltScreen = true
+	// Cell-motion mouse: wheel scrolls, clicks select. The terminal's native
+	// text selection needs a modifier while this is on (Option/Shift); the c
+	// key covers the main copy need (the next command) via OSC 52.
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 

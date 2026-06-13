@@ -374,11 +374,19 @@ func railGroup(v loop.LoopView) int {
 	}
 }
 
-func railLines(s frameState, railW, rows int) []cell {
+// railRow pairs a rendered rail line with the loop it represents; idx is -1
+// for the blank gap rows between urgency groups and for broken loops. The
+// mouse hit-test maps clicks back through this.
+type railRow struct {
+	line cell
+	idx  int
+}
+
+func railRows(s frameState, railW, rows int) []railRow {
 	// One accent per row: the status glyph carries the color, the cursor is
 	// cyan, the ID is bold only when selected, and the budget is metadata.
 	// A blank row separates the urgency groups — the gap is the label.
-	var lines []cell
+	var out []railRow
 	selLine := 0
 	prevGroup := -1
 	idW := railW - 2 - 2 - 2 - 5
@@ -388,7 +396,7 @@ func railLines(s frameState, railW, rows int) []cell {
 		}
 		g := railGroup(v)
 		if prevGroup >= 0 && g != prevGroup {
-			lines = append(lines, cell{})
+			out = append(out, railRow{idx: -1})
 		}
 		prevGroup = g
 		marker := styled(s.color, sgrCyan, "▶ ")
@@ -400,44 +408,53 @@ func railLines(s frameState, railW, rows int) []cell {
 		idCell := plainCell(id)
 		if i == s.selected {
 			idCell = styled(s.color, sgrBold, id)
-			selLine = len(lines)
+			selLine = len(out)
 		}
 		iters := fmt.Sprintf("%d/%d", v.IterationsUsed, v.MaxIterations)
 		if loop.DisplayWidth(iters) > 5 {
 			iters = fmt.Sprintf("%d", v.IterationsUsed)
 		}
-		lines = append(lines, joinCells(
+		out = append(out, railRow{idx: i, line: joinCells(
 			marker,
 			styled(s.color, sgr, glyph),
 			plainCell(" "),
 			idCell,
 			styled(s.color, sgrDim, "  "+fmt.Sprintf("%5s", iters)),
-		))
+		)})
 	}
 	for _, b := range s.broken {
 		if prevGroup >= 0 && prevGroup != 2 {
-			lines = append(lines, cell{})
+			out = append(out, railRow{idx: -1})
 		}
 		prevGroup = 2
-		lines = append(lines, joinCells(
+		out = append(out, railRow{idx: -1, line: joinCells(
 			plainCell("  "),
 			styled(s.color, sgrRed, "✗"),
 			plainCell(" "+loop.TruncateDisplay(b.ID, idW)),
 			styled(s.color, sgrDim, " (unreadable)"),
-		))
+		)})
 	}
 	// Keep the selection visible when the list outgrows the rail.
-	if len(lines) <= rows {
-		return lines
+	if len(out) <= rows {
+		return out
 	}
 	start := 0
 	if selLine >= rows {
 		start = selLine - rows + 1
 	}
-	if start+rows > len(lines) {
-		start = len(lines) - rows
+	if start+rows > len(out) {
+		start = len(out) - rows
 	}
-	return lines[start : start+rows]
+	return out[start : start+rows]
+}
+
+func railLines(s frameState, railW, rows int) []cell {
+	rr := railRows(s, railW, rows)
+	lines := make([]cell, len(rr))
+	for i, r := range rr {
+		lines[i] = r.line
+	}
+	return lines
 }
 
 func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
@@ -1008,15 +1025,7 @@ func quietStateLines(s frameState, width int) []cell {
 		joinCells(plainCell("   "), styled(s.color, sgrCyan, "n"), plainCell(" starts the next loop")),
 		joinCells(plainCell("   the history: "), styled(s.color, sgrCyan, "loopy logbook")),
 	}
-	var last *loop.LoopView
-	for i := range s.loops {
-		v := &s.loops[i]
-		if v.Status == loop.StatusAccepted && v.NextCommand != "" {
-			if last == nil || v.EndedAt > last.EndedAt {
-				last = v
-			}
-		}
-	}
+	last := newestAcceptedWithCommand(s.loops)
 	if last != nil {
 		lines = append(lines,
 			cell{},
@@ -1026,6 +1035,22 @@ func quietStateLines(s frameState, width int) []cell {
 		)
 	}
 	return lines
+}
+
+// newestAcceptedWithCommand is the loop whose apply command the quiet rail
+// shows (and the c key copies): the most recently decided accepted loop that
+// still knows its final-diff path.
+func newestAcceptedWithCommand(loops []loop.LoopView) *loop.LoopView {
+	var last *loop.LoopView
+	for i := range loops {
+		v := &loops[i]
+		if v.Status == loop.StatusAccepted && v.NextCommand != "" {
+			if last == nil || v.EndedAt > last.EndedAt {
+				last = v
+			}
+		}
+	}
+	return last
 }
 
 func brokenOnlyLines(s frameState, width int) []cell {
@@ -1048,6 +1073,8 @@ func helpLines(s frameState) []cell {
 		{"n", "start a new loop (goal + the project verifier)"},
 		{"g / G", "jump to top / follow the tail"},
 		{"pgup/pgdn", "page through the body"},
+		{"mouse", "wheel scrolls · click selects loops and views"},
+		{"c", "copy the next command (terminal must allow OSC 52)"},
 		{"p", "pause at the next iteration boundary"},
 		{"r", "resume a paused loop · reject a parked one (confirms)"},
 		{"a", "abort a moving loop · accept a green one (confirms)"},
