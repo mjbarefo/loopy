@@ -354,6 +354,7 @@ func (m model) handleSynthDone(msg synthDoneMsg) (tea.Model, tea.Cmd) {
 	m.form.verifier = msg.res.Cmd
 	m.form.edited = true
 	m.form.proposedBy = msg.res.Agent
+	m.form.synthGoal = strings.TrimSpace(m.form.goal)
 	if msg.res.AlreadyGreen {
 		m.say("warning: the proposal already passes — the goal may be done, or it may not test the goal")
 	} else {
@@ -811,6 +812,32 @@ func (m model) View() tea.View {
 // handleFormKey drives the new-loop wizard. Typing uses the key's text (so
 // letters that are commands elsewhere, like q and p, spell the goal); enter
 // advances a step, esc walks back, and esc on the first step cancels.
+// startSynth kicks an async verifier-synthesis run for the goal and bumps the
+// sequence so a late result from a cancelled run is dropped.
+func (m *model) startSynth(agent, goal string) tea.Cmd {
+	m.form.synthesizing = true
+	m.form.synthStarted = time.Now()
+	m.form.synthSeq++
+	return synthesizeCmd(m.root, agent, goal, m.form.synthSeq)
+}
+
+// enterVerifierStep advances to the verifier step and, unless the agent has
+// already designed a verifier for this exact goal, kicks off synthesis — the
+// verifier is designed up front from the goal, not inferred blind. Inference
+// (prefilled in openForm) stays as the fallback when synthesis fails.
+func (m *model) enterVerifierStep() tea.Cmd {
+	m.form.step = stepVerifier
+	goal := strings.TrimSpace(m.form.goal)
+	agents := m.form.selectedAgents()
+	if goal == "" || len(agents) == 0 {
+		return nil
+	}
+	if m.form.proposedBy != "" && m.form.synthGoal == goal {
+		return nil // already have a proposal for this goal
+	}
+	return m.startSynth(agents[0], goal)
+}
+
 func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
@@ -866,10 +893,7 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.say("pick an agent first — it does the proposing")
 				return m, nil
 			}
-			m.form.synthesizing = true
-			m.form.synthStarted = time.Now()
-			m.form.synthSeq++
-			return m, synthesizeCmd(m.root, agents[0], strings.TrimSpace(m.form.goal), m.form.synthSeq)
+			return m, m.startSynth(agents[0], strings.TrimSpace(m.form.goal))
 		}
 		if next := editText(m.form.verifier, key, msg.Text, 500); next != m.form.verifier {
 			m.form.verifier = next
@@ -920,6 +944,10 @@ func (m model) wizardAdvance() (tea.Model, tea.Cmd) {
 			m.say("no agent to continue with — register one: loopy agent add …")
 			return m, nil
 		}
+		// The agent is chosen and the goal is set: hand the goal to the agent
+		// to design the verifier up front, rather than landing on a blind
+		// inferred default.
+		return m, m.enterVerifierStep()
 	case stepVerifier:
 		if strings.TrimSpace(f.verifier) == "" {
 			m.say("no verifier, no loop — type the command that proves the goal")

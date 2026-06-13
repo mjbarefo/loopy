@@ -12,14 +12,15 @@ import (
 
 // The new-loop wizard: press n and the monitor walks through every decision
 // a loop needs — goal, agent, verifier, budget, confirm — one question per
-// screen, plain words, defaults prefilled, esc steps back. It resolves the
-// verifier exactly like `loopy run` (project default, else inference;
-// starting with an untouched inferred verifier stores it as the project
-// default — the CLI's confirm-once contract). Loops are created with the
-// same domain call the CLI uses and handed to detached engines via the
-// resume path; the monitor itself never runs an engine. Marking more than
-// one agent races them: one loop per agent, ranked by `loopy judge` when
-// they have all parked.
+// screen, plain words, esc steps back. Once the goal and agent are set, the
+// agent designs the verifier for that goal up front (synthesis), so a loop is
+// never started against a blind inferred default that cannot tell whether the
+// goal was met; inference is the fallback when synthesis fails, and the human
+// always signs the verifier with enter. Loops are created with the same
+// domain call the CLI uses and handed to detached engines via the resume
+// path; the monitor itself never runs an engine. Marking more than one agent
+// races them: one loop per agent, ranked by `loopy judge` when they have all
+// parked.
 
 type wizardStep int
 
@@ -55,13 +56,16 @@ type formState struct {
 	inferSource   string // non-empty when the prefill was inferred
 	edited        bool
 
-	// Synthesis: tab on the verifier step asks the selected agent to propose
-	// a goal-testing command (async — the monitor keeps breathing). The
-	// result lands in the editable field; enter stays the human's signature.
+	// Synthesis: arriving at the verifier step asks the selected agent to
+	// design a goal-testing command (async — the monitor keeps breathing);
+	// tab on the step asks again. The result lands in the editable field;
+	// enter stays the human's signature. Inference (the prefill above) is the
+	// fallback when the agent cannot propose one.
 	synthesizing bool
 	synthStarted time.Time
 	synthSeq     int    // stale results (after esc) are dropped by sequence
 	proposedBy   string // agent that proposed the current verifier text
+	synthGoal    string // the goal the current proposal was designed for
 
 	// Budget fields as text, validated when the step advances.
 	iters       string
@@ -318,24 +322,28 @@ func verifierLines(s frameState, width int) []cell {
 		return []cell{
 			joinCells(
 				styled(s.color, sgrCyan, "◌ "),
-				plainCell(loop.TruncateDisplay(fmt.Sprintf("asking %s to propose a verifier… %s", agent, s.synthElapsed), width-2)),
+				plainCell(loop.TruncateDisplay(fmt.Sprintf("%s is designing the verifier for your goal… %s", agent, s.synthElapsed), width-2)),
 			),
 			{},
-			styled(s.color, sgrDim, "the agent explores the repo in a throwaway worktree — a minute or two."),
+			styled(s.color, sgrDim, "it explores the repo in a throwaway worktree — a minute or two."),
 			{},
-			affordance(s, "esc cancels the proposal and goes back"),
+			affordance(s, "esc skips the proposal and lets you write the verifier yourself"),
 		}
 	}
 	source := "type the command that proves the goal is met"
 	switch {
 	case f.proposedBy != "" && f.verifier != "":
-		source = "proposed by " + f.proposedBy + " — edit freely; enter is your sign-off"
+		source = "designed by " + f.proposedBy + " for this goal — edit freely; enter is your sign-off"
 	case f.edited:
 		source = "edited — used as a single stage for this loop"
 	case f.stored:
 		source = "the project default — edit to override for this loop"
 	case f.inferSource != "":
-		source = "inferred from " + f.inferSource + " — starting stores it as the project default"
+		source = "the agent had nothing; inferred from " + f.inferSource + " — edit it or press tab to ask again"
+	}
+	ask := "tab asks " + agent + " to design one"
+	if f.proposedBy != "" {
+		ask = "tab asks " + agent + " again"
 	}
 	return []cell{
 		inputCell(s, "verifier  ", f.verifier, true, width),
@@ -343,7 +351,7 @@ func verifierLines(s frameState, width int) []cell {
 		{},
 		styled(s.color, sgrDim, "this command decides green: exit 0 means the goal is met."),
 		{},
-		affordance(s, "tab asks "+agent+" to propose one · enter continues · esc goes back"),
+		affordance(s, ask+" · enter continues · esc goes back"),
 	}
 }
 

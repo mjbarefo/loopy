@@ -87,8 +87,23 @@ func TestWizardWalksTheSteps(t *testing.T) {
 	}}
 	enter := press(tea.KeyEnter, "")
 
-	// goal → agent → verifier → budget → confirm.
-	for want := stepAgent; want <= stepConfirm; want++ {
+	// goal → agent.
+	res, _ := m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.step != stepAgent {
+		t.Fatalf("goal should advance to the agent step, got %d", m.form.step)
+	}
+	// agent → verifier kicks synthesis; the proposal must land before enter
+	// can sign it.
+	res, cmd := m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.step != stepVerifier || !m.form.synthesizing || cmd == nil {
+		t.Fatalf("advancing past the agent should land on the verifier and ask the agent: step=%d synth=%v", m.form.step, m.form.synthesizing)
+	}
+	res2, _ := m.Update(synthDoneMsg{seq: m.form.synthSeq, res: loop.SynthesisResult{Agent: "claude", Cmd: "test -f x"}})
+	m = res2.(model)
+	// verifier → budget → confirm.
+	for want := stepBudget; want <= stepConfirm; want++ {
 		res, _ := m.handleFormKey(enter)
 		m = res.(model)
 		if m.form.step != want {
@@ -97,7 +112,7 @@ func TestWizardWalksTheSteps(t *testing.T) {
 	}
 
 	// esc walks back without losing anything.
-	res, _ := m.handleFormKey(press(tea.KeyEscape, ""))
+	res, _ = m.handleFormKey(press(tea.KeyEscape, ""))
 	m = res.(model)
 	if m.form.step != stepBudget || m.form.goal != "fix it" {
 		t.Fatalf("esc should step back keeping state, step=%d goal=%q", m.form.step, m.form.goal)
@@ -338,6 +353,43 @@ func TestCopyNextCommand(t *testing.T) {
 	m = res.(model)
 	if cmd == nil || !strings.Contains(m.flash, "git apply") {
 		t.Fatalf("the quiet rail should copy the shown apply command, flash=%q", m.flash)
+	}
+}
+
+// TestWizardAutoSynthesizes: advancing past the agent step hands the goal to
+// the agent to design the verifier — no blind inferred default. Re-entering
+// the verifier step for the same goal keeps the proposal instead of re-asking.
+func TestWizardAutoSynthesizes(t *testing.T) {
+	m := model{form: formState{
+		active: true, step: stepAgent, goal: "write an AGENTS.md",
+		agents: []string{"codex"}, picked: map[int]bool{},
+	}}
+	enter := press(tea.KeyEnter, "")
+
+	res, cmd := m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.step != stepVerifier || !m.form.synthesizing || cmd == nil {
+		t.Fatalf("agent→verifier should auto-ask the agent: step=%d synth=%v cmd=%v", m.form.step, m.form.synthesizing, cmd != nil)
+	}
+
+	// The proposal lands goal-specific (edited=true keeps it out of the
+	// project-default store path).
+	res2, _ := m.Update(synthDoneMsg{seq: m.form.synthSeq, res: loop.SynthesisResult{Agent: "codex", Cmd: "test -f AGENTS.md && make check"}})
+	m = res2.(model)
+	if m.form.verifier != "test -f AGENTS.md && make check" || !m.form.edited || m.form.synthGoal != "write an AGENTS.md" {
+		t.Fatalf("proposal did not land goal-specific: %+v", m.form)
+	}
+
+	// esc back to the agent, forward again: the same goal is not re-asked.
+	res, _ = m.handleFormKey(press(tea.KeyEscape, ""))
+	m = res.(model)
+	res, cmd = m.handleFormKey(enter)
+	m = res.(model)
+	if m.form.synthesizing || cmd != nil {
+		t.Fatal("re-entering the verifier for the same goal must not re-ask the agent")
+	}
+	if m.form.verifier != "test -f AGENTS.md && make check" {
+		t.Fatal("the existing proposal must survive a step back and forward")
 	}
 }
 

@@ -566,18 +566,37 @@ func TestFrameNewLoopWizard(t *testing.T) {
 		}
 	}
 
-	// Step 3: the verifier, editable, with its provenance.
+	// Step 3: the verifier, editable, with its provenance. The agent designs
+	// it; while synthesizing the step says so.
 	s.form = base
 	s.form.step = stepVerifier
+	s.form.synthesizing = true
+	s.synthElapsed = "12s"
 	frame = renderFrame(s)
-	for _, want := range []string{"go test ./...", "inferred from go.mod", "exit 0 means the goal is met"} {
+	for _, want := range []string{"is designing the verifier for your goal", "throwaway worktree"} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("verifier step missing %q\n%s", want, frame)
+			t.Errorf("synthesizing verifier step missing %q\n%s", want, frame)
 		}
 	}
+
+	// A landed proposal: attributed, editable, the human signs with enter.
+	s.form = base
+	s.form.step = stepVerifier
+	s.form.proposedBy = "claude"
 	s.form.edited = true
-	if !strings.Contains(renderFrame(s), "edited — used as a single stage") {
-		t.Error("an edited verifier must say it will not be stored")
+	s.form.verifier = "test -f AGENTS.md && make check"
+	frame = renderFrame(s)
+	for _, want := range []string{"designed by claude for this goal", "tab asks claude again", "exit 0 means the goal is met"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("proposed verifier step missing %q\n%s", want, frame)
+		}
+	}
+
+	// Synthesis failed: inference is the fallback, and tab re-asks.
+	s.form = base
+	s.form.step = stepVerifier
+	if !strings.Contains(renderFrame(s), "the agent had nothing; inferred from go.mod") {
+		t.Error("a fallback-to-inference verifier should say the agent had nothing")
 	}
 
 	// Step 4: budget, hard caps named.
