@@ -182,7 +182,7 @@ send "\r"
 # The verifier step lands instantly as a hybrid — command gates plus an ask
 # stage whose question defaults to the goal — with no blocking agent call.
 expect {
-    -ex "answers PASS/FAIL each iteration" {}
+    -ex "judges this in plain English each iteration" {}
     timeout { fail "wizard: the verifier step never composed the hybrid" }
 }
 # tab is the optional polish: it asks the agent to design the gates; idle

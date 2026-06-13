@@ -257,9 +257,9 @@ func TestFrameVerifierTabScoreboard(t *testing.T) {
 	for _, want := range []string{
 		"✓ vet",
 		"✗ test",
-		"(300ms)",
-		"· build  go build ./...  did not run",
-		"red: stage test failed — the log below shows why",
+		"300ms",
+		"· build  go build ./...  not yet run",
+		"red — test failed; the log below shows why",
 		"--- FAIL: TestQuotedNewlines",
 	} {
 		if !strings.Contains(frame, want) {
@@ -299,9 +299,32 @@ func TestFrameVerifierTabAskStage(t *testing.T) {
 	}}
 	frame := renderFrame(s)
 	checkFrameGeometry(t, frame, 120, 36)
-	for _, want := range []string{"✓ judge", "ask does the importer handle quoted newlines?", "green: the goal is met"} {
+	for _, want := range []string{"✓ judge", "asks claude: does the importer handle quoted newlines?", "green — the goal is met"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("ask-stage scoreboard missing %q\n%s", want, frame)
+		}
+	}
+}
+
+// TestFrameVerifierTabCommandNotFound: a command stage that exits 127 is almost
+// always prose typed into the checks field, not a real test — the verdict points
+// at the fix (clear it, let the agent judge) instead of a generic failure.
+func TestFrameVerifierTabCommandNotFound(t *testing.T) {
+	s := wideState()
+	s.tab = tabVerifier
+	s.loops[0].Verifier = []loop.Stage{{Name: "verify", Cmd: "agents.md in repo root"}}
+	s.loops[0].Iterations[1].Stages = []loop.StageResult{
+		{Name: "verify", Cmd: "agents.md in repo root", ExitCode: 127, DurationMS: 16},
+	}
+	s.loops[0].Iterations[1].FailingStage = "verify"
+	s.art = artifact{label: "iter 1 · verifier.log", iter: 1, lines: []string{
+		"=== stage verify: agents.md in repo root",
+		"sh: agents.md: command not found",
+	}}
+	frame := renderFrame(s)
+	for _, want := range []string{"not a runnable command (exit 127)", "let the agent judge"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("a 127 verdict should point at the fix, missing %q\n%s", want, frame)
 		}
 	}
 }
@@ -320,7 +343,7 @@ func TestFrameVerifierTabGreen(t *testing.T) {
 		"ok  	github.com/example/pkg	0.4s",
 	}}
 	frame := renderFrame(s)
-	if !strings.Contains(frame, "green: the goal is met") {
+	if !strings.Contains(frame, "green — the goal is met") {
 		t.Errorf("green verifier tab needs its verdict\n%s", frame)
 	}
 	s.color = true
@@ -600,7 +623,7 @@ func TestFrameNewLoopWizard(t *testing.T) {
 	frame = renderFrame(s)
 	for _, want := range []string{
 		"checks  go test ./...", "ask     is the importer fixed",
-		"claude answers PASS/FAIL each iteration", "a hybrid", "↑↓ switches",
+		"claude judges this in plain English", "the agent judges", "↑↓ switches",
 		"tab asks claude to design the checks",
 	} {
 		if !strings.Contains(frame, want) {

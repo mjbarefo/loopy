@@ -27,18 +27,20 @@ Homebrew tap.
 ### Changed
 
 - Monitor wizard: the verifier step is now a **hybrid, composed instantly** —
-  no more multi-minute pause on loop creation. It lands with two fields:
-  `checks` (command gates, prefilled from inference) and `ask` (a question
-  the agent answers PASS/FAIL each iteration, defaulting to your goal),
-  switched with ↑↓. Either can be cleared for a command-only or ask-only
-  verifier; enter is your sign-off. The agent's judgment now happens inline
-  at verify-time instead of blocking the wizard up front. `tab` is the
-  optional polish: it still asks the agent to design tighter command gates.
-  (Replaces the always-on up-front synthesis; the `loopy run` CLI is
-  unchanged.)
-- Monitor verifier tab: ask stages in the per-stage scoreboard wear an `ask`
-  tag (a word, not just color) and show their question, so a green reached by
-  the agent's judgment reads distinctly from one a shell command proved.
+  no more multi-minute pause on loop creation. The **ask question is the hero**
+  (plain English the agent judges, defaulting to your goal); `checks` is an
+  optional, clearly-labelled shell gate below it, so a description never lands
+  in a shell by mistake. ↑↓ switches; either can be cleared for an ask-only or
+  command-only verifier; enter is your sign-off. The agent's judgment now
+  happens inline at verify-time instead of blocking the wizard up front. `tab`
+  is the optional polish: it asks the agent to design tighter command gates.
+  (Replaces the always-on up-front synthesis; the `loopy run` CLI is unchanged.)
+- Monitor verifier tab: a cleaner per-stage scoreboard — bold stage names,
+  ask stages rendered as `asks <agent>: "<question>"`, and the verdict word
+  colored (green/red/yellow) with the explanation plain. A command stage that
+  exits 127 (the classic "I typed a description, not a command" mistake) now
+  gets a verdict that points at the fix — clear the check to let the agent
+  judge, or write real shell — instead of a generic failure.
 - Monitor: a loop that parks green at baseline (the verifier passed before
   the agent ever ran) no longer looks like a win. It gets the yellow `!` in
   the rail and title, its own header count ("already green — check the

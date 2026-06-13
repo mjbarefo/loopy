@@ -130,12 +130,13 @@ func TestWizardWalksTheSteps(t *testing.T) {
 		t.Fatal("the wizard should say what is wrong with the budget")
 	}
 
-	// Editing the verifier marks it as such.
+	// The verifier step focuses the ask field first; typing edits the question.
 	m.form.step = stepVerifier
+	m.form.verifierField = 0
 	res, _ = m.handleFormKey(press('x', "x"))
 	m = res.(model)
-	if !m.form.edited {
-		t.Fatal("typing on the verifier step must set edited")
+	if !m.form.askEdited {
+		t.Fatal("typing on the verifier step should edit the ask question by default")
 	}
 
 	// Space on the agent step marks for racing.
@@ -383,21 +384,26 @@ func TestWizardComposesHybridInstantly(t *testing.T) {
 		t.Fatalf("expected a command gate then an ask stage, got %+v", stages)
 	}
 
-	// ↑↓ switches to the ask field; typing there edits the question, not gates.
-	res, _ = m.handleFormKey(press(tea.KeyDown, ""))
-	m = res.(model)
-	if m.form.verifierField != 1 {
-		t.Fatalf("down should switch to the ask field, got field %d", m.form.verifierField)
-	}
+	// The ask field is focused first (the hero); typing edits the question.
 	res, _ = m.handleFormKey(press('?', "?"))
 	m = res.(model)
 	if m.form.ask != "write an AGENTS.md?" || m.form.edited {
-		t.Fatalf("typing on the ask field should edit the question only: ask=%q edited=%v", m.form.ask, m.form.edited)
+		t.Fatalf("typing should edit the ask question by default, not the gates: ask=%q edited=%v", m.form.ask, m.form.edited)
+	}
+
+	// ↓ switches to the checks field; typing there edits the command, not the ask.
+	res, _ = m.handleFormKey(press(tea.KeyDown, ""))
+	m = res.(model)
+	if m.form.verifierField != 1 {
+		t.Fatalf("down should switch to the checks field, got field %d", m.form.verifierField)
+	}
+	res, _ = m.handleFormKey(press('x', "x"))
+	m = res.(model)
+	if !m.form.edited || m.form.ask != "write an AGENTS.md?" {
+		t.Fatalf("typing on the checks field should edit the command only: verifier=%q edited=%v", m.form.verifier, m.form.edited)
 	}
 
 	// tab is still the optional polish: it asks the agent to design the gates.
-	res, _ = m.handleFormKey(press(tea.KeyUp, ""))
-	m = res.(model)
 	res, cmd = m.handleFormKey(press(tea.KeyTab, ""))
 	m = res.(model)
 	if !m.form.synthesizing || cmd == nil {
