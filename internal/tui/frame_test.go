@@ -155,11 +155,11 @@ func TestFrameIdentityAccents(t *testing.T) {
 func TestFrameOverviewAnswersTheQuestions(t *testing.T) {
 	frame := renderFrame(wideState())
 	for _, want := range []string{
-		"1 running",                   // header: what is here
-		"✗ test (1/2)",                // timeline + convergence signal
-		"✓ green",                     // verdicts
-		"now: agent running · iter 3", // what is it doing right now
-		"last feedback tail:",         // why is it red
+		"1 running",           // header: what is here
+		"✗ test (1/2)",        // timeline + convergence signal
+		"✓ green",             // verdicts
+		"now: agent running",  // what is it doing right now
+		"last feedback tail:", // why is it red
 	} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("frame missing %q\n%s", want, frame)
@@ -846,8 +846,8 @@ func TestFrameColorDiet(t *testing.T) {
 	if !strings.Contains(frame, "\x1b[36m●\x1b[0m now: agent running") {
 		t.Error("running activity should be a cyan glyph + plain text")
 	}
-	if !strings.Contains(frame, "\x1b[2m — \x1b[0mrunning") {
-		t.Error("the title's status phrase should be plain — the glyph says it")
+	if !strings.Contains(frame, "running\x1b[2m · \x1b[0mclaude") {
+		t.Error("the meta line's status phrase and agent should be plain — the glyph says the state")
 	}
 	if !strings.Contains(frame, "\x1b[36m●\x1b[0m agent running…") {
 		t.Error("the live timeline row should color only its dot")
@@ -943,27 +943,22 @@ func TestFrameGoalWraps(t *testing.T) {
 	}
 
 	_, detailW := s.railArea()
-	header := detailHeaderLines(s, s.loops[0], detailW)
-	goalLines := len(loop.WrapDisplay(s.loops[0].Goal, detailW-7))
+	goalLines := len(loop.WrapDisplay(s.loops[0].Goal, detailW-4))
 	if goalLines < 2 || goalLines > 3 {
 		t.Fatalf("fixture goal should wrap to 2-3 lines at this width, got %d", goalLines)
 	}
-	// title + goal lines + agent + activity + spacer + nav.
-	if want := 5 + goalLines; len(header) != want {
-		t.Fatalf("header rows = %d, want %d", len(header), want)
-	}
-	if !strings.HasPrefix(header[2].plain, "       ") {
-		t.Errorf("goal continuation needs the hanging indent, got %q", header[2].plain)
+	// Layout: title, meta, blank, then the goal block at index 3, each indented.
+	header := detailHeaderLines(s, s.loops[0], detailW)
+	if !strings.HasPrefix(header[3].plain, "  ") {
+		t.Errorf("the goal block should be indented under the meta line, got %q", header[3].plain)
 	}
 
-	// An absurd goal caps at three lines, the last marked truncated.
+	// An absurd goal caps at three lines, the last marked truncated. The goal
+	// occupies header[3..5].
 	s.loops[0].Goal = strings.Repeat("ten chars ", 60)
 	header = detailHeaderLines(s, s.loops[0], detailW)
-	if want := 5 + 3; len(header) != want {
-		t.Fatalf("header rows = %d, want %d (goal capped at 3 lines)", len(header), want)
-	}
-	if !strings.HasSuffix(header[3].plain, "…") {
-		t.Errorf("the capped goal line should end in an ellipsis, got %q", header[3].plain)
+	if !strings.HasSuffix(header[5].plain, "…") {
+		t.Errorf("the third (capped) goal line should end in an ellipsis, got %q", header[5].plain)
 	}
 }
 

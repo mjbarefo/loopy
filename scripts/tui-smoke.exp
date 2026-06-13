@@ -79,12 +79,12 @@ expect {
     -ex "pause at the next iteration boundary" {}
     timeout { fail "wide: help overlay never appeared" }
 }
-# Mouse, end to end: SGR sequences are 1-based; the nav bar sits on screen
-# row 9, and behind this rail (capped at 34 columns by the long loop ID) the
-# "diff" name covers 1-based columns 59-62. One click dismisses the help;
-# the next, on the nav name, switches the view.
-send "\x1b\[<0;60;9M\x1b\[<0;60;9m"
-send "\x1b\[<0;60;9M\x1b\[<0;60;9m"
+# Mouse, end to end: SGR sequences are 1-based; the restructured header puts
+# the nav bar on screen row 11, and behind this rail (capped at 34 columns by
+# the long loop ID) the "diff" name covers 1-based columns 59-62. One click
+# dismisses the help; the next, on the nav name, switches the view.
+send "\x1b\[<0;60;11M\x1b\[<0;60;11m"
+send "\x1b\[<0;60;11M\x1b\[<0;60;11m"
 expect {
     -ex "▸ diff" {}
     timeout { fail "wide: clicking the diff name did not switch the view" }

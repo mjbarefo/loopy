@@ -518,41 +518,42 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 // so it stays plain.
 func detailHeaderLines(s frameState, sel loop.LoopView, width int) []cell {
 	glyph, sgr := statusGlyph(sel)
+	// Line 1: the status glyph (color carries the state) and the loop id, bold.
 	lines := []cell{joinCells(
 		styled(s.color, sgr, glyph+" "),
 		styled(s.color, sgrBold, sel.ID),
-		styled(s.color, sgrDim, " — "),
-		plainCell(statusPhrase(sel)),
 	)}
-	for _, gl := range wrapCapped(sel.Goal, width-7, 3) {
-		label := styled(s.color, sgrDim, "goal   ")
-		if len(lines) > 1 {
-			label = plainCell("       ") // the hanging indent under the label
-		}
-		lines = append(lines, joinCells(label, plainCell(loop.TruncateDisplay(gl, width-7))))
-	}
+	// Line 2: one label-free meta line — status word, agent, budget — with dim
+	// separators. The glyph above carries the color; the word here spells it.
 	lines = append(lines, joinCells(
-		styled(s.color, sgrDim, "agent  "),
+		plainCell("  "),
+		plainCell(statusPhrase(sel)),
+		styled(s.color, sgrDim, " · "),
 		plainCell(sel.Agent),
 		styled(s.color, sgrDim, " · iter "),
 		plainCell(fmt.Sprintf("%d/%d", sel.IterationsUsed, sel.MaxIterations)),
-		styled(s.color, sgrDim, " · wall "),
+		styled(s.color, sgrDim, " · "),
 		plainCell(fmt.Sprintf("%s of %s", sel.WallClockUsed, sel.MaxWallClock)),
 	))
-	actCode, actGlyph, actText := activityParts(s, sel)
-	if actGlyph == "" {
+	// The goal is the hero: its own block, no label, wrapped under a calm indent.
+	lines = append(lines, cell{})
+	for _, gl := range wrapCapped(sel.Goal, width-4, 3) {
+		lines = append(lines, joinCells(plainCell("  "), plainCell(loop.TruncateDisplay(gl, width-4))))
+	}
+	// What it's doing now / why it parked — its own line below the goal, when
+	// there is any. The glyph is the only color (the diet).
+	if actCode, actGlyph, actText := activityParts(s, sel); actGlyph != "" {
 		lines = append(lines, cell{})
-	} else {
-		for i, al := range wrapCapped(actText, width-2, 2) {
+		for i, al := range wrapCapped(actText, width-4, 2) {
 			mark := styled(s.color, actCode, actGlyph)
 			if i > 0 {
 				mark = plainCell(" ")
 			}
-			lines = append(lines, joinCells(mark, plainCell(" "+loop.TruncateDisplay(al, width-2))))
+			lines = append(lines, joinCells(plainCell(" "), mark, plainCell(" "+loop.TruncateDisplay(al, width-4))))
 		}
 	}
-	lines = append(lines, cell{})
-	lines = append(lines, navBar(s))
+	// The nav must stay the LAST row: the mouse hit-test keys on it.
+	lines = append(lines, cell{}, navBar(s))
 	return lines
 }
 
@@ -579,9 +580,9 @@ func activityParts(s frameState, v loop.LoopView) (code, glyph, text string) {
 		var now string
 		switch v.Phase {
 		case loop.PhaseAgent:
-			now = fmt.Sprintf("now: agent running · iter %d", v.PhaseIteration)
+			now = "now: agent running"
 		case loop.PhaseVerify:
-			now = fmt.Sprintf("now: verifying · iter %d", v.PhaseIteration)
+			now = "now: verifying"
 		case loop.PhaseReview:
 			now = "now: reviewer critiquing the green diff"
 		default:

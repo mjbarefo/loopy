@@ -298,7 +298,7 @@ func TestMouseClick(t *testing.T) {
 
 	m = model{loops: sampleLoops(), selected: 0, width: 120, height: 36, scroll: -1}
 	railW, _ := m.frameState().railArea()
-	res, _ = m.Update(tea.MouseClickMsg{X: 2 + railW + 2 + 20, Y: 8, Button: tea.MouseLeft})
+	res, _ = m.Update(tea.MouseClickMsg{X: 2 + railW + 2 + 20, Y: 10, Button: tea.MouseLeft})
 	m = res.(model)
 	if m.tab != tabDiff {
 		t.Fatalf("clicking the diff name should switch the view, tab=%d", m.tab)

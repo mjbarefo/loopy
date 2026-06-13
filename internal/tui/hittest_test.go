@@ -28,21 +28,21 @@ func TestHitTestWideGeometry(t *testing.T) {
 		t.Errorf("empty rail area = %+v", got)
 	}
 
-	// The nav bar is detail row 5 (y=8): "▸ overview   live   diff   verifier".
-	if got := hitTest(s, detailX, 8); got.kind != hitTab || got.tab != tabOverview {
+	// The nav bar is the header's last row (y=10): "▸ overview   live   diff   verifier".
+	if got := hitTest(s, detailX, 10); got.kind != hitTab || got.tab != tabOverview {
 		t.Errorf("nav start = %+v, want overview", got)
 	}
-	if got := hitTest(s, detailX+13, 8); got.kind != hitTab || got.tab != tabLive {
+	if got := hitTest(s, detailX+13, 10); got.kind != hitTab || got.tab != tabLive {
 		t.Errorf("nav live = %+v", got)
 	}
-	if got := hitTest(s, detailX+20, 8); got.kind != hitTab || got.tab != tabDiff {
+	if got := hitTest(s, detailX+20, 10); got.kind != hitTab || got.tab != tabDiff {
 		t.Errorf("nav diff = %+v", got)
 	}
-	if got := hitTest(s, detailX+27, 8); got.kind != hitTab || got.tab != tabVerifier {
+	if got := hitTest(s, detailX+27, 10); got.kind != hitTab || got.tab != tabVerifier {
 		t.Errorf("nav verifier = %+v", got)
 	}
 	// Past the last name: plain detail.
-	if got := hitTest(s, detailX+60, 8); got.kind != hitDetail {
+	if got := hitTest(s, detailX+60, 10); got.kind != hitDetail {
 		t.Errorf("past the nav = %+v, want detail", got)
 	}
 
@@ -63,13 +63,13 @@ func TestHitTestDenseNoRail(t *testing.T) {
 	s := wideState()
 	s.width, s.height = 60, 18 // not roomy, rail collapsed
 
-	if got := hitTest(s, 0, 7); got.kind != hitNothing {
+	if got := hitTest(s, 0, 9); got.kind != hitNothing {
 		t.Errorf("the margin column = %+v, want nothing", got)
 	}
-	if got := hitTest(s, 1, 7); got.kind != hitTab || got.tab != tabOverview {
+	if got := hitTest(s, 1, 9); got.kind != hitTab || got.tab != tabOverview {
 		t.Errorf("dense nav = %+v, want overview", got)
 	}
-	if got := hitTest(s, 10, 10); got.kind != hitDetail {
+	if got := hitTest(s, 10, 12); got.kind != hitDetail {
 		t.Errorf("dense body = %+v, want detail", got)
 	}
 }
@@ -80,7 +80,7 @@ func TestHitTestDenseNoRail(t *testing.T) {
 func TestHitTestNavNeedsTheLoopDetail(t *testing.T) {
 	base := wideState()
 	railW, _ := base.railArea()
-	x, y := 2+railW+2, 8
+	x, y := 2+railW+2, 10
 
 	if got := hitTest(base, x, y); got.kind != hitTab {
 		t.Fatalf("baseline should hit the nav, got %+v", got)
