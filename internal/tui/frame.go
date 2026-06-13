@@ -235,10 +235,14 @@ func lineAt(lines []cell, i int) cell {
 func headerCell(s frameState) cell {
 	var counts = map[string]int{}
 	live := 0
+	baselineGreen := 0
 	for _, v := range s.loops {
 		counts[v.Status]++
 		if v.Status == loop.StatusRunning && v.Live {
 			live++
+		}
+		if v.Status == loop.StatusGreen && v.IterationsUsed == 0 {
+			baselineGreen++
 		}
 	}
 	type bucket struct {
@@ -255,8 +259,13 @@ func headerCell(s frameState) cell {
 	if n := counts[loop.StatusPaused]; n > 0 {
 		parts = append(parts, bucket{n, "paused"})
 	}
-	if n := counts[loop.StatusGreen]; n > 0 {
+	// Baseline green is not a win: it leaves the "green to review" bucket
+	// and gets named for what it is.
+	if n := counts[loop.StatusGreen] - baselineGreen; n > 0 {
 		parts = append(parts, bucket{n, "green to review"})
+	}
+	if baselineGreen > 0 {
+		parts = append(parts, bucket{baselineGreen, "already green — check the verifier"})
 	}
 	if n := counts[loop.StatusParked]; n > 0 {
 		parts = append(parts, bucket{n, "parked"})
@@ -332,6 +341,9 @@ func statusGlyph(v loop.LoopView) (glyph, sgr string) {
 	case loop.StatusPaused:
 		return "◌", sgrYellow
 	case loop.StatusGreen:
+		if v.IterationsUsed == 0 {
+			return "!", sgrYellow // green at baseline: the agent never ran
+		}
 		return "✓", sgrGreen
 	case loop.StatusAccepted:
 		return "✓", sgrGreen
@@ -349,6 +361,11 @@ func statusPhrase(v loop.LoopView) string {
 			return "running"
 		}
 		return "running (no engine)"
+	case loop.StatusGreen:
+		if v.IterationsUsed == 0 {
+			return "green at baseline (the agent never ran)"
+		}
+		return v.Status
 	default:
 		return v.Status
 	}
@@ -477,32 +494,8 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 		return helpLines(s)
 	}
 
-	// The detail header borrows the form's typography: dim labels, plain
-	// values, the status accent on the glyph only — the phrase repeats the
-	// glyph in words, so it stays plain.
 	lines := make([]cell, 0, rows)
-	glyph, sgr := statusGlyph(*sel)
-	lines = append(lines, joinCells(
-		styled(s.color, sgr, glyph+" "),
-		styled(s.color, sgrBold, sel.ID),
-		styled(s.color, sgrDim, " — "),
-		plainCell(statusPhrase(*sel)),
-	))
-	lines = append(lines, joinCells(
-		styled(s.color, sgrDim, "goal   "),
-		plainCell(loop.TruncateDisplay(sel.Goal, width-7)),
-	))
-	lines = append(lines, joinCells(
-		styled(s.color, sgrDim, "agent  "),
-		plainCell(sel.Agent),
-		styled(s.color, sgrDim, " · iter "),
-		plainCell(fmt.Sprintf("%d/%d", sel.IterationsUsed, sel.MaxIterations)),
-		styled(s.color, sgrDim, " · wall "),
-		plainCell(fmt.Sprintf("%s of %s", sel.WallClockUsed, sel.MaxWallClock)),
-	))
-	lines = append(lines, activityLine(s, *sel, width))
-	lines = append(lines, cell{})
-	lines = append(lines, navBar(s))
+	lines = append(lines, detailHeaderLines(s, *sel, width)...)
 
 	bodyRows := rows - len(lines)
 	var body []cell
@@ -515,19 +508,73 @@ func detailLines(s frameState, sel *loop.LoopView, width, rows int) []cell {
 	return lines
 }
 
-// activityLine is the two-second answer to "what is it doing right now".
-// Status color is glyph-sized: one colored glyph, then plain words.
-func activityLine(s frameState, v loop.LoopView, width int) cell {
-	mark := func(code, glyph, text string) cell {
-		return joinCells(
-			styled(s.color, code, glyph),
-			plainCell(" "+loop.TruncateDisplay(text, width-2)),
-		)
+// detailHeaderLines is the detail pane's fixed header: the status title, the
+// goal (wrapped, up to three lines), the agent line, the activity line
+// (wrapped, up to two), a spacer, and the nav. The body's scroll math and the
+// mouse hit-test both count these rows, so they are built in one place.
+//
+// The header borrows the form's typography: dim labels, plain values, the
+// status accent on the glyph only — the phrase repeats the glyph in words,
+// so it stays plain.
+func detailHeaderLines(s frameState, sel loop.LoopView, width int) []cell {
+	glyph, sgr := statusGlyph(sel)
+	lines := []cell{joinCells(
+		styled(s.color, sgr, glyph+" "),
+		styled(s.color, sgrBold, sel.ID),
+		styled(s.color, sgrDim, " — "),
+		plainCell(statusPhrase(sel)),
+	)}
+	for _, gl := range wrapCapped(sel.Goal, width-7, 3) {
+		label := styled(s.color, sgrDim, "goal   ")
+		if len(lines) > 1 {
+			label = plainCell("       ") // the hanging indent under the label
+		}
+		lines = append(lines, joinCells(label, plainCell(loop.TruncateDisplay(gl, width-7))))
 	}
+	lines = append(lines, joinCells(
+		styled(s.color, sgrDim, "agent  "),
+		plainCell(sel.Agent),
+		styled(s.color, sgrDim, " · iter "),
+		plainCell(fmt.Sprintf("%d/%d", sel.IterationsUsed, sel.MaxIterations)),
+		styled(s.color, sgrDim, " · wall "),
+		plainCell(fmt.Sprintf("%s of %s", sel.WallClockUsed, sel.MaxWallClock)),
+	))
+	actCode, actGlyph, actText := activityParts(s, sel)
+	if actGlyph == "" {
+		lines = append(lines, cell{})
+	} else {
+		for i, al := range wrapCapped(actText, width-2, 2) {
+			mark := styled(s.color, actCode, actGlyph)
+			if i > 0 {
+				mark = plainCell(" ")
+			}
+			lines = append(lines, joinCells(mark, plainCell(" "+loop.TruncateDisplay(al, width-2))))
+		}
+	}
+	lines = append(lines, cell{})
+	lines = append(lines, navBar(s))
+	return lines
+}
+
+// wrapCapped word-wraps text to at most maxLines lines; everything past the
+// cap is squeezed into (and truncated on) the last line, so nothing vanishes
+// silently.
+func wrapCapped(text string, width, maxLines int) []string {
+	lines := loop.WrapDisplay(text, width)
+	if len(lines) > maxLines {
+		rest := strings.Join(lines[maxLines-1:], " ")
+		lines = append(lines[:maxLines-1], loop.TruncateDisplay(rest, width))
+	}
+	return lines
+}
+
+// activityParts is the two-second answer to "what is it doing right now".
+// Status color is glyph-sized: one colored glyph, then plain words.
+func activityParts(s frameState, v loop.LoopView) (code, glyph, text string) {
 	switch v.Status {
 	case loop.StatusRunning:
 		if !v.Live {
-			return mark(sgrYellow, "!", "no engine holds this loop — r resumes it, loopy abort stops it")
+			return sgrYellow, "!", "no engine holds this loop — r resumes it, loopy abort stops it"
 		}
 		var now string
 		switch v.Phase {
@@ -543,24 +590,24 @@ func activityLine(s frameState, v loop.LoopView, width int) cell {
 		if s.phaseElapsed != "" && v.Phase != "" {
 			now += " · " + s.phaseElapsed
 		}
-		return mark(sgrCyan, "●", now)
+		return sgrCyan, "●", now
 	case loop.StatusPaused:
-		return mark(sgrYellow, "◌", "paused — r starts an engine and resumes")
+		return sgrYellow, "◌", "paused — r starts an engine and resumes"
 	case loop.StatusGreen:
 		if v.IterationsUsed == 0 {
 			// Green with zero iterations means the agent never ran: honesty
 			// over celebration.
-			return mark(sgrYellow, "!", "already green at baseline — nothing to do, or the verifier may not test the goal")
+			return sgrYellow, "!", "already green at baseline — nothing to do, or the verifier may not test the goal"
 		}
-		return mark(sgrGreen, "✓", fmt.Sprintf("verifier green after %d iteration(s) — ready for review", v.IterationsUsed))
+		return sgrGreen, "✓", fmt.Sprintf("verifier green after %d iteration(s) — ready for review", v.IterationsUsed)
 	case loop.StatusParked:
-		return mark(sgrRed, "✗", v.ParkedReason)
+		return sgrRed, "✗", v.ParkedReason
 	case loop.StatusAccepted:
-		return mark(sgrGreen, "✓", "decided: accepted")
+		return sgrGreen, "✓", "decided: accepted"
 	case loop.StatusRejected:
-		return mark(sgrRed, "✗", "decided: rejected")
+		return sgrRed, "✗", "decided: rejected"
 	}
-	return cell{}
+	return "", "", ""
 }
 
 // navBar is the quiet nav: ▸ plus cyan marks the active view, the rest sit
@@ -868,13 +915,21 @@ func verifierHeaderLines(s frameState, width int) []cell {
 			styled(s.color, sgrDim, "  ("+loop.HumanDuration(time.Duration(r.DurationMS)*time.Millisecond)+")"),
 		))
 	}
-	if it.Green {
+	switch {
+	case it.Green && it.Baseline:
+		// Green before the agent ever ran proves nothing about the goal.
+		lines = append(lines, joinCells(
+			plainCell(" "),
+			styled(s.color, sgrYellow, "!"),
+			plainCell(" "+loop.TruncateDisplay("green at baseline — the agent never ran; this verifier may not test the goal", width-3)),
+		))
+	case it.Green:
 		lines = append(lines, joinCells(
 			plainCell(" "),
 			styled(s.color, sgrGreen, "✓"),
 			plainCell(" green: the goal is met"),
 		))
-	} else {
+	default:
 		verdict := "red: the verifier failed — the log below shows why"
 		if it.FailingStage != "" {
 			verdict = fmt.Sprintf("red: stage %s failed — the log below shows why", it.FailingStage)

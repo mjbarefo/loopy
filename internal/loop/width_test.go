@@ -94,3 +94,33 @@ func TestPadDisplay(t *testing.T) {
 		}
 	}
 }
+
+func TestWrapDisplay(t *testing.T) {
+	cases := []struct {
+		in    string
+		width int
+		want  []string
+	}{
+		{"add an AGENTS.md in the root", 12, []string{"add an", "AGENTS.md in", "the root"}},
+		{"short", 20, []string{"short"}},
+		{"", 10, []string{""}},
+		{"   spaced    out   ", 20, []string{"spaced out"}},
+		// A word wider than the line gets a line of its own.
+		{"see docs/very/long/path/name.md now", 10, []string{"see", "docs/very/long/path/name.md", "now"}},
+		// CJK counts two columns per rune.
+		{"引用符 付き 改行", 7, []string{"引用符", "付き", "改行"}},
+		{"anything", 0, []string{"anything"}},
+	}
+	for _, c := range cases {
+		got := WrapDisplay(c.in, c.width)
+		if len(got) != len(c.want) {
+			t.Errorf("WrapDisplay(%q, %d) = %q, want %q", c.in, c.width, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("WrapDisplay(%q, %d)[%d] = %q, want %q", c.in, c.width, i, got[i], c.want[i])
+			}
+		}
+	}
+}

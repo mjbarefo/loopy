@@ -727,14 +727,17 @@ func (m *model) scrollBy(delta int) {
 	m.scroll = next
 }
 
-// detailFixedRows mirrors the frame's layout: status, goal, meta, activity,
-// spacer, nav bar.
-const detailFixedRows = 6
-
 // bodyRows asks the frame's own geometry how many body rows remain after
-// the chrome and the fixed detail header.
+// the chrome and the detail header (whose goal and activity lines wrap, so
+// its height is counted, not assumed).
 func (m model) bodyRows() int {
-	return m.frameState().contentRows() - detailFixedRows
+	s := m.frameState()
+	rows := s.contentRows()
+	if v := m.current(); v != nil {
+		_, detailW := s.railArea()
+		return rows - len(detailHeaderLines(s, *v, detailW))
+	}
+	return rows - 6
 }
 
 func (m model) bodyLineCount() int {

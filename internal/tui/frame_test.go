@@ -771,7 +771,8 @@ func TestFrameColorDiet(t *testing.T) {
 }
 
 // TestFrameBaselineGreenHonesty: green after zero iterations means the agent
-// never ran — the monitor says so instead of celebrating.
+// never ran — the monitor says so everywhere instead of celebrating: the
+// header bucket, the rail glyph, the title phrase, and the activity line.
 func TestFrameBaselineGreenHonesty(t *testing.T) {
 	s := wideState()
 	s.loops[0] = loop.LoopView{
@@ -783,11 +784,19 @@ func TestFrameBaselineGreenHonesty(t *testing.T) {
 		NextCommand: "loopy review already-green",
 	}
 	frame := renderFrame(s)
-	if !strings.Contains(frame, "already green at baseline — nothing to do, or the verifier may not test the goal") {
-		t.Errorf("baseline green must be named honestly\n%s", frame)
+	for _, want := range []string{
+		"1 already green — check the verifier",    // the header pulse names it
+		"green at baseline (the agent never ran)", // the title phrase
+		"already green at baseline — nothing to do, or the verifier may not test the goal",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("baseline green honesty missing %q\n%s", want, frame)
+		}
 	}
-	if strings.Contains(frame, "ready for review") {
-		t.Error("baseline green is not a win; no celebration line")
+	for _, gone := range []string{"ready for review", "1 green to review"} {
+		if strings.Contains(frame, gone) {
+			t.Errorf("baseline green is not a win; %q must not appear", gone)
+		}
 	}
 
 	s.color = true
@@ -795,8 +804,76 @@ func TestFrameBaselineGreenHonesty(t *testing.T) {
 	if !strings.Contains(frame, "\x1b[33m!\x1b[0m already green at baseline") {
 		t.Error("baseline green carries the caution glyph")
 	}
+	if !strings.Contains(frame, "\x1b[33m!\x1b[0m \x1b[1malready-green") {
+		t.Error("the rail and title glyph should be the yellow !, not the green ✓")
+	}
 	if strings.Contains(frame, "\x1b[32m✓\x1b[0m verifier green") {
 		t.Error("baseline green must not reuse the green success line")
+	}
+}
+
+// TestFrameVerifierTabBaselineGreen: the verifier tab's verdict must not
+// celebrate a baseline-green run — green before the agent ran proves nothing.
+func TestFrameVerifierTabBaselineGreen(t *testing.T) {
+	s := wideState()
+	s.tab = tabVerifier
+	s.loops[0] = loop.LoopView{
+		ID: "already-green", Goal: "a goal the verifier may not test",
+		Agent: "codex", Status: loop.StatusGreen,
+		IterationsUsed: 0, MaxIterations: 3,
+		WallClockUsed: "26s", MaxWallClock: "30m",
+		Verifier: []loop.Stage{{Name: "check", Cmd: "make check"}},
+		Iterations: []loop.IterationView{{
+			Index: 0, Baseline: true, Green: true,
+			Stages: []loop.StageResult{{Name: "check", Cmd: "make check", ExitCode: 0, DurationMS: 26000}},
+		}},
+	}
+	s.art = artifact{label: "iter 0 · verifier.log", iter: 0, lines: []string{
+		"=== stage check: make check",
+		"=== stage check: exit 0 (26.0s)",
+	}}
+	frame := renderFrame(s)
+	if !strings.Contains(frame, "green at baseline — the agent never ran; this verifier may not test the goal") {
+		t.Errorf("baseline-green verifier tab needs the honest verdict\n%s", frame)
+	}
+	if strings.Contains(frame, "green: the goal is met") {
+		t.Error("a baseline-green run must not claim the goal is met")
+	}
+}
+
+// TestFrameGoalWraps: a long goal wraps under a hanging indent (up to three
+// lines, the last truncated) instead of vanishing behind an ellipsis.
+func TestFrameGoalWraps(t *testing.T) {
+	s := wideState()
+	s.loops[0].Goal = "Add an AGENTS.md in the root of this repo that follows AGENTS.md best practice - sub 200 lines is preferred with executive / summary language that is easy to understand."
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	if !strings.Contains(frame, "best practice") {
+		t.Errorf("the goal's second line should be visible, not truncated away\n%s", frame)
+	}
+
+	_, detailW := s.railArea()
+	header := detailHeaderLines(s, s.loops[0], detailW)
+	goalLines := len(loop.WrapDisplay(s.loops[0].Goal, detailW-7))
+	if goalLines < 2 || goalLines > 3 {
+		t.Fatalf("fixture goal should wrap to 2-3 lines at this width, got %d", goalLines)
+	}
+	// title + goal lines + agent + activity + spacer + nav.
+	if want := 5 + goalLines; len(header) != want {
+		t.Fatalf("header rows = %d, want %d", len(header), want)
+	}
+	if !strings.HasPrefix(header[2].plain, "       ") {
+		t.Errorf("goal continuation needs the hanging indent, got %q", header[2].plain)
+	}
+
+	// An absurd goal caps at three lines, the last marked truncated.
+	s.loops[0].Goal = strings.Repeat("ten chars ", 60)
+	header = detailHeaderLines(s, s.loops[0], detailW)
+	if want := 5 + 3; len(header) != want {
+		t.Fatalf("header rows = %d, want %d (goal capped at 3 lines)", len(header), want)
+	}
+	if !strings.HasSuffix(header[3].plain, "…") {
+		t.Errorf("the capped goal line should end in an ellipsis, got %q", header[3].plain)
 	}
 }
 

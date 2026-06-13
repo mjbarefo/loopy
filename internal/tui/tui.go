@@ -57,12 +57,12 @@ func RenderOnce(root, loopID string) (string, error) {
 		s.width = cols
 	}
 	s.tab = tabOverview
-	// Content-sized: the fixed detail header plus the body, inside bounds.
-	rows := detailFixedRows
+	// Content-sized: the detail header (goal and activity lines wrap, so it
+	// is counted) plus the body, inside bounds.
+	rows := 6 + 16 // empty/onboarding state
 	if v := m.current(); v != nil {
-		rows += len(overviewBody(s, *v, s.width))
-	} else {
-		rows += 16 // empty/onboarding state
+		_, detailW := s.railArea()
+		rows = len(detailHeaderLines(s, *v, detailW)) + len(overviewBody(s, *v, s.width))
 	}
 	height := rows + 4
 	if s.width >= collapseWidth && height >= marginHeight {

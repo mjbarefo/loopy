@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestHitTestWideGeometry holds the hit-test to renderFrame's roomy layout:
 // content starts at row 3 behind a two-column gutter, the rail rows map to
@@ -93,6 +96,23 @@ func TestHitTestNavNeedsTheLoopDetail(t *testing.T) {
 		if got := hitTest(s, x, y); got.kind == hitTab {
 			t.Errorf("%s: the nav should not be clickable, got %+v", name, got)
 		}
+	}
+}
+
+// TestHitTestNavFollowsTheWrappedHeader: a long goal pushes the nav bar
+// down; the hit-test counts the header rather than assuming six rows.
+func TestHitTestNavFollowsTheWrappedHeader(t *testing.T) {
+	s := wideState()
+	s.loops[0].Goal = strings.Repeat("a long goal that wraps ", 8)
+	railW, detailW := s.railArea()
+	x := 2 + railW + 2
+	navRow := len(detailHeaderLines(s, s.loops[0], detailW)) - 1
+
+	if got := hitTest(s, x, 3+navRow); got.kind != hitTab || got.tab != tabOverview {
+		t.Errorf("nav at its counted row = %+v, want overview", got)
+	}
+	if got := hitTest(s, x, 8); got.kind == hitTab {
+		t.Errorf("the old fixed nav row should now be plain detail, got %+v", got)
 	}
 }
 

@@ -62,18 +62,19 @@ func hitTest(s frameState, x, y int) hitTarget {
 	if x < detailStart {
 		return none
 	}
-	if row == navBarRow && detailShowsLoop(s) {
-		if t, ok := navTabAt(s, x-detailStart); ok {
-			return hitTarget{kind: hitTab, loopIdx: -1, tab: t}
+	if detailShowsLoop(s) {
+		// The nav bar is the detail header's last row; the goal and activity
+		// lines wrap, so its position is counted, not assumed.
+		_, detailW := s.railArea()
+		header := detailHeaderLines(s, s.loops[s.selected], detailW)
+		if row == len(header)-1 {
+			if t, ok := navTabAt(s, x-detailStart); ok {
+				return hitTarget{kind: hitTab, loopIdx: -1, tab: t}
+			}
 		}
 	}
 	return hitTarget{kind: hitDetail, loopIdx: -1}
 }
-
-// navBarRow is the nav bar's position inside the detail pane: title, goal,
-// agent, activity, spacer, then the nav (detailFixedRows keeps the same
-// count for scrolling).
-const navBarRow = 5
 
 // detailShowsLoop mirrors detailLines' branching: the loop detail (and so
 // the nav bar) renders only when a loop is selected and nothing covers it.

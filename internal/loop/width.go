@@ -95,3 +95,30 @@ func PadDisplay(s string, width int) string {
 	}
 	return s
 }
+
+// WrapDisplay greedily word-wraps s into lines of at most width display
+// columns (CJK and emoji count two). Internal whitespace collapses to single
+// spaces; a word wider than a line gets a line of its own (renderers truncate
+// what they draw, so it stays safe). Always returns at least one line.
+func WrapDisplay(s string, width int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	if width <= 0 {
+		return []string{strings.Join(words, " ")}
+	}
+	lines := []string{words[0]}
+	lineW := DisplayWidth(words[0])
+	for _, word := range words[1:] {
+		w := DisplayWidth(word)
+		if lineW+1+w <= width {
+			lines[len(lines)-1] += " " + word
+			lineW += 1 + w
+			continue
+		}
+		lines = append(lines, word)
+		lineW = w
+	}
+	return lines
+}
