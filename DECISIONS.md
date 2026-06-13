@@ -746,6 +746,25 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   from the default path; `synthGoal`/re-ask-guard logic goes with it. Scope:
   wizard + monitor; `loopy run` CLI still inference-default + `--verify auto`.
 
+- **2026-06-13 — Ask is the hero; the checks field is a labelled shell gate.**
+  Live drive surfaced the trap: the owner typed a plain-English check
+  ("agents.md in repo root") into the `checks` field, loopy ran it as
+  `sh -c`, it exited 127 (command not found), and because command gates run
+  first and short-circuit, the ask stage never ran — so "the agent checking
+  the work" silently didn't happen. Fix: the wizard now focuses the **ask**
+  field first (plain English, the agent judges) with `checks` a clearly
+  optional shell gate beneath it, so the natural path is description→judge,
+  not prose→shell. And the monitor special-cases **exit 127** on a command
+  stage with a verdict that names the fix (clear the check to let the agent
+  judge, or write real shell) rather than a generic red. Aligns with the
+  standing "lean on the agent" direction. Visual pass on the verifier tab
+  (bold stage names, `asks <agent>: "<q>"`, colored verdict *word*) stayed
+  inside the existing **color diet** (`TestFrameColorDiet`): color accents
+  the signal glyph/word, prose stays plain — so the title's status phrase was
+  left plain rather than colored. A bolder header restructure (spacing,
+  hierarchy) is deferred; it touches the counted header geometry
+  (`detailHeaderLines` → scroll math + hit-test) and deserves its own pass.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -888,7 +888,8 @@ func verifierHeaderLines(s frameState, width int) []cell {
 	if it == nil {
 		return nil
 	}
-	stages := s.loops[s.selected].Verifier
+	sel := s.loops[s.selected]
+	stages := sel.Verifier
 	var lines []cell
 	nameW := 0
 	for _, st := range stages {
@@ -897,18 +898,18 @@ func verifierHeaderLines(s frameState, width int) []cell {
 		}
 	}
 	for i, st := range stages {
-		// An ask stage is judged by the agent, not a shell command; tag it so
-		// the human sees which greens are mechanical and which are a judgment.
-		// The tag is a word, never just color — NO_COLOR stays legible.
-		tag := ""
-		descBudget := width - nameW - 12
-		if st.Kind == loop.KindAsk {
-			tag = "ask "
-			descBudget -= 4
-		}
+		// An ask stage is judged by the agent, not a shell command. It reads as
+		// the request it is — `asks <agent>: <question>` — so a judged green
+		// never looks identical to a mechanically-proved one. The words carry
+		// it; color is never the only signal (NO_COLOR stays legible).
+		prefix, desc := stagePrefixDesc(st, sel)
+		descBudget := width - nameW - loop.DisplayWidth(prefix) - 9
 		if i >= len(it.Stages) {
-			lines = append(lines, styled(s.color, sgrDim, loop.TruncateDisplay(
-				" · "+loop.PadDisplay(st.Name, nameW)+"  "+tag+st.Descriptor()+"  did not run", width)))
+			lines = append(lines, joinCells(
+				styled(s.color, sgrDim, " · "+loop.PadDisplay(st.Name, nameW)+"  "+prefix),
+				styled(s.color, sgrDim, loop.TruncateDisplay(desc, descBudget)),
+				styled(s.color, sgrDim, "  not yet run"),
+			))
 			continue
 		}
 		r := it.Stages[i]
@@ -917,45 +918,67 @@ func verifierHeaderLines(s frameState, width int) []cell {
 			glyph, sgr = "✗", sgrRed
 		}
 		row := []cell{
-			plainCell(" "),
-			styled(s.color, sgr, glyph),
-			plainCell(" " + loop.PadDisplay(st.Name, nameW) + "  "),
+			styled(s.color, sgr, " "+glyph),
+			styled(s.color, sgrBold, " "+loop.PadDisplay(st.Name, nameW)),
+			plainCell("  "),
 		}
-		if tag != "" {
-			row = append(row, styled(s.color, sgrDim, tag))
+		if prefix != "" {
+			row = append(row, styled(s.color, sgrDim, prefix))
 		}
 		row = append(row,
-			plainCell(loop.TruncateDisplay(st.Descriptor(), descBudget)),
-			styled(s.color, sgrDim, "  ("+loop.HumanDuration(time.Duration(r.DurationMS)*time.Millisecond)+")"),
+			plainCell(loop.TruncateDisplay(desc, descBudget)),
+			styled(s.color, sgrDim, "  "+loop.HumanDuration(time.Duration(r.DurationMS)*time.Millisecond)),
 		)
 		lines = append(lines, joinCells(row...))
 	}
+	lines = append(lines, cell{}, verifierVerdict(s, it, width), cell{})
+	return lines
+}
+
+// stagePrefixDesc splits a stage into a dim kind prefix and its descriptor: a
+// command stage is just its command; an ask stage reads `asks <agent>: ` then
+// the question.
+func stagePrefixDesc(st loop.Stage, sel loop.LoopView) (prefix, desc string) {
+	if st.Kind != loop.KindAsk {
+		return "", st.Cmd
+	}
+	agent := strings.TrimSpace(st.Agent)
+	if agent == "" {
+		agent = sel.Agent
+	}
+	return "asks " + agent + ": ", st.Ask
+}
+
+// verifierVerdict is the one plain-words line under the scoreboard. The verdict
+// word carries the color (the diet: accent the signal, keep the prose plain);
+// the explanation that follows stays plain. Exit 127 on a command stage almost
+// always means prose was typed into the checks field, not a command — so it
+// gets a verdict that points at the fix rather than a generic failure.
+func verifierVerdict(s frameState, it *loop.IterationView, width int) cell {
 	switch {
 	case it.Green && it.Baseline:
-		// Green before the agent ever ran proves nothing about the goal.
-		lines = append(lines, joinCells(
-			plainCell(" "),
-			styled(s.color, sgrYellow, "!"),
-			plainCell(" "+loop.TruncateDisplay("green at baseline — the agent never ran; this verifier may not test the goal", width-3)),
-		))
+		return colorVerdict(s, sgrYellow, "!", "green at baseline", " — the agent never ran; this verifier may not test the goal", width)
 	case it.Green:
-		lines = append(lines, joinCells(
-			plainCell(" "),
-			styled(s.color, sgrGreen, "✓"),
-			plainCell(" green: the goal is met"),
-		))
-	default:
-		verdict := "red: the verifier failed — the log below shows why"
-		if it.FailingStage != "" {
-			verdict = fmt.Sprintf("red: stage %s failed — the log below shows why", it.FailingStage)
-		}
-		lines = append(lines, joinCells(
-			plainCell(" "),
-			styled(s.color, sgrRed, "✗"),
-			plainCell(" "+loop.TruncateDisplay(verdict, width-3)),
-		))
+		return colorVerdict(s, sgrGreen, "✓", "green", " — the goal is met", width)
 	}
-	return append(lines, cell{})
+	if n := len(it.Stages); n > 0 && it.Stages[n-1].ExitCode == 127 {
+		return colorVerdict(s, sgrRed, "✗", "not a runnable command (exit 127)", " — clear the check to let the agent judge, or write real shell", width)
+	}
+	rest := " — the verifier failed; the log below shows why"
+	if it.FailingStage != "" {
+		rest = fmt.Sprintf(" — %s failed; the log below shows why", it.FailingStage)
+	}
+	return colorVerdict(s, sgrRed, "✗", "red", rest, width)
+}
+
+// colorVerdict accents the glyph and the verdict word; the explanation is plain.
+func colorVerdict(s frameState, sgr, glyph, word, rest string, width int) cell {
+	budget := width - loop.DisplayWidth(word) - 4
+	return joinCells(
+		styled(s.color, sgr, " "+glyph+" "),
+		styled(s.color, sgr, word),
+		plainCell(loop.TruncateDisplay(rest, budget)),
+	)
 }
 
 // verifierLogLines styles the log so the answer pops: "=== stage" markers are

@@ -894,10 +894,10 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.say("pick an agent first — it designs the checks")
 				return m, nil
 			}
-			m.form.verifierField = 0
+			m.form.verifierField = 1 // the proposal lands in the checks field
 			return m, m.startSynth(agents[0], strings.TrimSpace(m.form.goal))
 		}
-		if m.form.verifierField == 1 {
+		if m.form.verifierField == 0 {
 			if next := editText(m.form.ask, key, msg.Text, 500); next != m.form.ask {
 				m.form.ask = next
 				m.form.askEdited = true

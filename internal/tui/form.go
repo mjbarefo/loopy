@@ -353,26 +353,28 @@ func verifierLines(s frameState, width int) []cell {
 			affordance(s, "esc skips the proposal and lets you write the verifier yourself"),
 		}
 	}
-	source := "shell that gates green: exit 0 passes — leave blank to judge only"
+	// The ask question is the hero and is focused first: plain English the
+	// agent judges. The checks gate is the optional shell add-on below it —
+	// labelled so a description never lands in a shell by mistake.
+	checks := "optional shell gate — runs as a command, exit 0 passes; blank is fine"
 	switch {
 	case f.proposedBy != "" && f.verifier != "":
-		source = "designed by " + f.proposedBy + " for this goal — edit freely"
+		checks = "designed by " + f.proposedBy + " for this goal — a shell command, edit freely"
 	case f.edited:
-		source = "edited — one stage for this loop"
+		checks = "your shell command — runs as-is, exit 0 passes"
 	case f.stored:
-		source = "the project default — edit to override for this loop"
+		checks = "the project default — a shell command, edit to override"
 	case f.inferSource != "":
-		source = "inferred from " + f.inferSource + " — edit, or tab asks " + agent + " for tighter gates"
+		checks = "inferred from " + f.inferSource + " — or tab asks " + agent + " for tighter gates"
 	}
-	askSource := agent + " answers PASS/FAIL each iteration — leave blank to skip the judge"
 	return []cell{
-		inputCell(s, "checks  ", f.verifier, f.verifierField == 0, width),
-		styled(s.color, sgrDim, loop.TruncateDisplay("        "+source, width)),
+		inputCell(s, "ask     ", f.ask, f.verifierField == 0, width),
+		styled(s.color, sgrDim, loop.TruncateDisplay("        "+agent+" judges this in plain English each iteration — your main check", width)),
 		{},
-		inputCell(s, "ask     ", f.ask, f.verifierField == 1, width),
-		styled(s.color, sgrDim, loop.TruncateDisplay("        "+askSource, width)),
+		inputCell(s, "checks  ", f.verifier, f.verifierField == 1, width),
+		styled(s.color, sgrDim, loop.TruncateDisplay("        "+checks, width)),
 		{},
-		styled(s.color, sgrDim, "a hybrid — gates check fast, the agent judges the rest. ↑↓ switches."),
+		styled(s.color, sgrDim, "the agent judges; checks are an optional fast shell gate. ↑↓ switches."),
 		{},
 		affordance(s, "tab asks "+agent+" to design the checks · enter continues · esc goes back"),
 	}
