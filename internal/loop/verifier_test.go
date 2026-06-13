@@ -13,7 +13,7 @@ func TestRunVerifierGreen(t *testing.T) {
 	outcome, err := RunVerifier(context.Background(), t.TempDir(), []Stage{
 		{Name: "a", Cmd: "echo one"},
 		{Name: "b", Cmd: "echo two"},
-	}, &log)
+	}, &log, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestRunVerifierShortCircuits(t *testing.T) {
 		{Name: "fmt", Cmd: "echo fine"},
 		{Name: "vet", Cmd: "echo broken hint; exit 3"},
 		{Name: "test", Cmd: "echo never runs"},
-	}, &log)
+	}, &log, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRunVerifierShortCircuits(t *testing.T) {
 }
 
 func TestRunVerifierEmptyStages(t *testing.T) {
-	if _, err := RunVerifier(context.Background(), t.TempDir(), nil, &bytes.Buffer{}); err == nil {
+	if _, err := RunVerifier(context.Background(), t.TempDir(), nil, &bytes.Buffer{}, nil); err == nil {
 		t.Fatal("expected error for empty verifier")
 	}
 }
@@ -76,7 +76,7 @@ func TestRunVerifierCancellation(t *testing.T) {
 		cancel()
 	}()
 	start := time.Now()
-	_, err := RunVerifier(ctx, t.TempDir(), []Stage{{Name: "slow", Cmd: "sleep 30"}}, &bytes.Buffer{})
+	_, err := RunVerifier(ctx, t.TempDir(), []Stage{{Name: "slow", Cmd: "sleep 30"}}, &bytes.Buffer{}, nil)
 	if err == nil {
 		t.Fatal("expected cancellation error")
 	}

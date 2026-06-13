@@ -46,8 +46,22 @@ func CreateLoop(root string, opts CreateOptions) (Loop, error) {
 		return Loop{}, errors.New("a loop cannot be created without a verifier (pass --verify or configure a default)")
 	}
 	for _, stage := range opts.Verifier {
-		if strings.TrimSpace(stage.Cmd) == "" {
-			return Loop{}, fmt.Errorf("verifier stage %q has an empty command", stage.Name)
+		switch stage.kind() {
+		case KindAsk:
+			if strings.TrimSpace(stage.Ask) == "" {
+				return Loop{}, fmt.Errorf("verifier stage %q asks an agent but has no question", stage.Name)
+			}
+			if override := strings.TrimSpace(stage.Agent); override != "" {
+				if _, _, err := ResolveAgent(root, override); err != nil {
+					return Loop{}, fmt.Errorf("verifier stage %q: %w", stage.Name, err)
+				}
+			}
+		case KindCommand:
+			if strings.TrimSpace(stage.Cmd) == "" {
+				return Loop{}, fmt.Errorf("verifier stage %q has an empty command", stage.Name)
+			}
+		default:
+			return Loop{}, fmt.Errorf("verifier stage %q has unknown kind %q", stage.Name, stage.Kind)
 		}
 	}
 	agentName, _, err := ResolveAgent(root, opts.Agent)
@@ -333,7 +347,7 @@ func runBaseline(root string, l Loop, ev Events) (Iteration, error) {
 	ctx, stop := watchAbort(root, l.ID)
 	defer stop()
 	_ = WritePhase(root, l.ID, Phase{Iteration: 0, Phase: PhaseVerify, StartedAt: it.StartedAt})
-	outcome, err := verifyToLog(ctx, l, dir, 0, ev)
+	outcome, err := verifyToLog(ctx, root, l, nil, dir, 0, ev)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return it, err
 	}
@@ -436,7 +450,7 @@ func runIteration(root string, l Loop, agent Agent, index int, prev *Iteration, 
 
 	// Verifier phase.
 	_ = WritePhase(root, l.ID, Phase{Iteration: index, Phase: PhaseVerify, StartedAt: utcNowISO()})
-	outcome, verr := verifyToLog(ctx, l, dir, index, ev)
+	outcome, verr := verifyToLog(ctx, root, l, diff, dir, index, ev)
 	if verr != nil && !errors.Is(verr, context.Canceled) {
 		return it, false, verr
 	}
@@ -453,20 +467,23 @@ func runIteration(root string, l Loop, agent Agent, index int, prev *Iteration, 
 	return it, errors.Is(verr, context.Canceled), nil
 }
 
-func verifyToLog(ctx context.Context, l Loop, iterDir string, index int, ev Events) (VerifierOutcome, error) {
+func verifyToLog(ctx context.Context, root string, l Loop, diff []byte, iterDir string, index int, ev Events) (VerifierOutcome, error) {
 	logFile, err := os.OpenFile(filepath.Join(iterDir, VerifierLogFile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return VerifierOutcome{}, err
 	}
 	defer logFile.Close()
-	outcome, err := runVerifierWithEvents(ctx, l.Worktree, l.Verifier, logFile, index, ev)
+	// Ask stages judge with the loop's own agent, in the worktree, seeing the
+	// cumulative diff. Always supplied; command-only verifiers ignore it.
+	ask := &AskContext{Root: root, Goal: l.Goal, Agent: l.Agent, Diff: diff}
+	outcome, err := runVerifierWithEvents(ctx, l.Worktree, l.Verifier, logFile, index, ev, ask)
 	return outcome, err
 }
 
 // runVerifierWithEvents wraps RunVerifier to emit per-stage events as stages
 // finish (RunVerifier itself stays a pure domain function).
-func runVerifierWithEvents(ctx context.Context, dir string, stages []Stage, log io.Writer, index int, ev Events) (VerifierOutcome, error) {
-	outcome, err := RunVerifier(ctx, dir, stages, log)
+func runVerifierWithEvents(ctx context.Context, dir string, stages []Stage, log io.Writer, index int, ev Events, ask *AskContext) (VerifierOutcome, error) {
+	outcome, err := RunVerifier(ctx, dir, stages, log, ask)
 	if ev.StageDone != nil {
 		for _, r := range outcome.Stages {
 			ev.StageDone(index, r)
