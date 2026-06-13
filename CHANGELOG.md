@@ -10,6 +10,15 @@ Homebrew tap.
 
 ### Changed
 
+- Monitor wizard: the verifier is now designed by the agent for your goal,
+  automatically. After you pick the goal and agent, the wizard asks the
+  agent to propose a goal-testing verifier (the step shows "<agent> is
+  designing the verifier…"); the proposal lands in the editable field and
+  enter is still your sign-off. Inference is the fallback when the agent
+  can't propose one, and `tab` re-asks. Loops are no longer started against
+  a blind inferred default that can't tell whether the goal was met. (The
+  `loopy run` CLI is unchanged: inference by default, `--verify auto` to
+  synthesize.)
 - Monitor: a loop that parks green at baseline (the verifier passed before
   the agent ever ran) no longer looks like a win. It gets the yellow `!` in
   the rail and title, its own header count ("already green — check the

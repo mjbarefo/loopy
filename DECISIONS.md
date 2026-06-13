@@ -673,6 +673,28 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   gains one dim line naming the mouse and `c`, because features nobody
   discovers don't exist.
 
+- **2026-06-13 — The wizard designs the verifier up front, by default.**
+  The owner's verdict after the baseline-green no-op: "the agent should
+  design the verifier up front when the goal is designed," and he chose
+  always-auto-synthesize over a baseline-guard or opt-in. So the wizard now
+  kicks synthesis automatically at the goal→agent→verifier boundary (the
+  earliest point an agent is known to do the proposing) instead of waiting
+  for `tab`. The verifier step lands already-synthesizing; the proposal
+  fills the editable field attributed to its agent; enter is still the
+  human's signature (invariant 1 holds — no verifier, no loop, and the
+  human signs). Inference stays prefilled as the **fallback** when the
+  agent can't propose one. Re-entering the verifier step for the same goal
+  does not re-ask (tracked by `synthGoal`); `tab` re-asks on demand. This
+  accepts the 1–3 min synthesis pause on every wizard-created loop — the
+  owner's explicit call, the cost of a verifier that actually tests the
+  goal. Scope: the **wizard** only. `loopy run` keeps inference as its
+  no-flag default with `--verify auto` opt-in — a scripted/non-interactive
+  CLI run can't take a TTY-gated multi-minute pause (synthesis fails closed
+  without a TTY), and the baseline-green CLI park already points at
+  `--verify auto`. Builds on the `--verify auto` and wizard tab-synthesis
+  decisions above; the machinery was already there but opt-in — this flips
+  it to the default.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
