@@ -89,7 +89,7 @@ func RunVerifier(ctx context.Context, dir string, stages []Stage, log io.Writer,
 		result := StageResult{
 			Name:       stage.Name,
 			Kind:       stage.kind(),
-			Cmd:        stage.descriptor(),
+			Cmd:        stage.Descriptor(),
 			ExitCode:   exitCode,
 			DurationMS: time.Since(start).Milliseconds(),
 		}

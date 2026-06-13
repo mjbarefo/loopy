@@ -727,6 +727,25 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   branch, `runAskStage`); the wizard composing hybrids by default and the
   monitor's per-stage kind glyph are the follow-up.
 
+- **2026-06-13 — The wizard composes a hybrid instantly; #31's synthesis is
+  demoted to optional polish.** This is the payoff of the spectrum and the
+  fix for the live-drive verdict (the default-on synthesis pause hit 3m+ and
+  felt too slow). The verifier step now lands instantly with two fields:
+  `checks` (command gates, prefilled from inference) and `ask` (the question,
+  defaulting to the goal), switched with ↑↓. No agent call on arrival — the
+  agent's judgment moves inline to verify-time, where the user already waits
+  on the agent, instead of blocking loop creation. Either field may be
+  cleared (command-only or ask-only, both valid); enter signs. `tab` keeps
+  the #31 synthesis as an opt-in that designs tighter command gates and lands
+  attributed in `checks`. **Storage:** only the command gates become the
+  project default (confirm-once); the ask question is goal-specific and is
+  never stored. **Monitor:** the verifier-tab scoreboard tags ask stages with
+  the word `ask` and shows the question — a judged green must not look
+  identical to a mechanically-proved one (color is never the only signal).
+  The blocking auto-synthesis (`enterVerifierStep` → `startSynth`) is removed
+  from the default path; `synthGoal`/re-ask-guard logic goes with it. Scope:
+  wizard + monitor; `loopy run` CLI still inference-default + `--verify auto`.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

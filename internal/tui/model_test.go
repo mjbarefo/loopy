@@ -93,15 +93,16 @@ func TestWizardWalksTheSteps(t *testing.T) {
 	if m.form.step != stepAgent {
 		t.Fatalf("goal should advance to the agent step, got %d", m.form.step)
 	}
-	// agent → verifier kicks synthesis; the proposal must land before enter
-	// can sign it.
+	// agent → verifier lands instantly on the hybrid: no synthesis, no agent
+	// call, and the ask question defaults to the goal.
 	res, cmd := m.handleFormKey(enter)
 	m = res.(model)
-	if m.form.step != stepVerifier || !m.form.synthesizing || cmd == nil {
-		t.Fatalf("advancing past the agent should land on the verifier and ask the agent: step=%d synth=%v", m.form.step, m.form.synthesizing)
+	if m.form.step != stepVerifier || m.form.synthesizing || cmd != nil {
+		t.Fatalf("advancing past the agent should land on the verifier without an agent call: step=%d synth=%v", m.form.step, m.form.synthesizing)
 	}
-	res2, _ := m.Update(synthDoneMsg{seq: m.form.synthSeq, res: loop.SynthesisResult{Agent: "claude", Cmd: "test -f x"}})
-	m = res2.(model)
+	if m.form.ask != "fix it" {
+		t.Fatalf("the ask question should default to the goal, got %q", m.form.ask)
+	}
 	// verifier → budget → confirm.
 	for want := stepBudget; want <= stepConfirm; want++ {
 		res, _ := m.handleFormKey(enter)
@@ -356,40 +357,73 @@ func TestCopyNextCommand(t *testing.T) {
 	}
 }
 
-// TestWizardAutoSynthesizes: advancing past the agent step hands the goal to
-// the agent to design the verifier — no blind inferred default. Re-entering
-// the verifier step for the same goal keeps the proposal instead of re-asking.
-func TestWizardAutoSynthesizes(t *testing.T) {
+// TestWizardComposesHybridInstantly: advancing past the agent step lands the
+// verifier instantly — command gates plus an ask question defaulting to the
+// goal — with no agent call. tab is the optional polish that designs gates,
+// and ↑↓ switches which field the keystrokes edit.
+func TestWizardComposesHybridInstantly(t *testing.T) {
 	m := model{form: formState{
 		active: true, step: stepAgent, goal: "write an AGENTS.md",
 		agents: []string{"codex"}, picked: map[int]bool{},
+		verifier: "make check",
 	}}
 	enter := press(tea.KeyEnter, "")
 
 	res, cmd := m.handleFormKey(enter)
 	m = res.(model)
-	if m.form.step != stepVerifier || !m.form.synthesizing || cmd == nil {
-		t.Fatalf("agent→verifier should auto-ask the agent: step=%d synth=%v cmd=%v", m.form.step, m.form.synthesizing, cmd != nil)
+	if m.form.step != stepVerifier || m.form.synthesizing || cmd != nil {
+		t.Fatalf("agent→verifier should be instant, no agent call: step=%d synth=%v cmd=%v", m.form.step, m.form.synthesizing, cmd != nil)
+	}
+	if m.form.ask != "write an AGENTS.md" {
+		t.Fatalf("the ask question should default to the goal, got %q", m.form.ask)
+	}
+	// The resolved verifier is a hybrid: the command gate plus the ask stage.
+	stages := m.form.resolvedStages()
+	if len(stages) != 2 || stages[0].Kind == loop.KindAsk || stages[1].Kind != loop.KindAsk {
+		t.Fatalf("expected a command gate then an ask stage, got %+v", stages)
 	}
 
-	// The proposal lands goal-specific (edited=true keeps it out of the
-	// project-default store path).
+	// ↑↓ switches to the ask field; typing there edits the question, not gates.
+	res, _ = m.handleFormKey(press(tea.KeyDown, ""))
+	m = res.(model)
+	if m.form.verifierField != 1 {
+		t.Fatalf("down should switch to the ask field, got field %d", m.form.verifierField)
+	}
+	res, _ = m.handleFormKey(press('?', "?"))
+	m = res.(model)
+	if m.form.ask != "write an AGENTS.md?" || m.form.edited {
+		t.Fatalf("typing on the ask field should edit the question only: ask=%q edited=%v", m.form.ask, m.form.edited)
+	}
+
+	// tab is still the optional polish: it asks the agent to design the gates.
+	res, _ = m.handleFormKey(press(tea.KeyUp, ""))
+	m = res.(model)
+	res, cmd = m.handleFormKey(press(tea.KeyTab, ""))
+	m = res.(model)
+	if !m.form.synthesizing || cmd == nil {
+		t.Fatal("tab on the verifier step should still ask the agent to design the checks")
+	}
 	res2, _ := m.Update(synthDoneMsg{seq: m.form.synthSeq, res: loop.SynthesisResult{Agent: "codex", Cmd: "test -f AGENTS.md && make check"}})
 	m = res2.(model)
-	if m.form.verifier != "test -f AGENTS.md && make check" || !m.form.edited || m.form.synthGoal != "write an AGENTS.md" {
-		t.Fatalf("proposal did not land goal-specific: %+v", m.form)
+	if m.form.verifier != "test -f AGENTS.md && make check" || !m.form.edited {
+		t.Fatalf("a tab proposal should land in the checks field: %+v", m.form)
 	}
+}
 
-	// esc back to the agent, forward again: the same goal is not re-asked.
-	res, _ = m.handleFormKey(press(tea.KeyEscape, ""))
-	m = res.(model)
-	res, cmd = m.handleFormKey(enter)
-	m = res.(model)
-	if m.form.synthesizing || cmd != nil {
-		t.Fatal("re-entering the verifier for the same goal must not re-ask the agent")
+// TestWizardAskOnlyVerifier: clearing the checks leaves an ask-only verifier,
+// which is allowed — the loop still has a verifier.
+func TestWizardAskOnlyVerifier(t *testing.T) {
+	f := formState{verifier: "", ask: "is the README friendlier and still accurate?"}
+	stages := f.resolvedStages()
+	if len(stages) != 1 || stages[0].Kind != loop.KindAsk {
+		t.Fatalf("an empty checks field with an ask question is a valid ask-only verifier, got %+v", stages)
 	}
-	if m.form.verifier != "test -f AGENTS.md && make check" {
-		t.Fatal("the existing proposal must survive a step back and forward")
+	// Both empty is no verifier — wizardAdvance must refuse it.
+	m := model{form: formState{active: true, step: stepVerifier}}
+	res, _ := m.wizardAdvance()
+	m = res.(model)
+	if m.form.step != stepVerifier || m.flash == "" {
+		t.Fatal("an empty checks and empty ask must not advance, and should say why")
 	}
 }
 

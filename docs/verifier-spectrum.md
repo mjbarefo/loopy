@@ -1,8 +1,8 @@
 # The verifier spectrum: command · ask · hybrid
 
-_Engine slice implemented (branch `mjbarefo/verifier/ask-stages`); the wizard UX
-is the follow-up. Supersedes the up-front verifier synthesis (#31) for the
-wizard's default path once that lands._
+_Implemented: the engine slice (#32) and the wizard/monitor surface (this
+branch). The wizard now composes a hybrid instantly and the up-front verifier
+synthesis (#31) is demoted from default gate to the optional `tab` polish._
 
 **Naming:** in code the agent-driven stage kind is **`ask`** (the loop *asks*
 the agent whether it's done), not "judge". "Judge" is already the deterministic,
@@ -85,6 +85,14 @@ Net for the wizard:
   verify, overlapping the work you'd wait for regardless.
 - #31's synthesis becomes an *optional polish* ("let the agent tighten these
   gates"), never the default blocking path.
+
+Implemented in the wizard: the verifier step has two fields — `checks`
+(inferred command gates, editable) and `ask` (the question, defaulting to the
+goal) — switched with ↑↓; either may be cleared (command-only or ask-only);
+`enter` signs. `tab` is the optional synthesis. Only the command gates are
+stored as the project default; the goal-specific ask question never is. The
+monitor's verifier-tab scoreboard tags ask stages with the word `ask` (not
+just color) so judged greens read distinctly from mechanical ones.
 
 ## Data model
 

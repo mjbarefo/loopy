@@ -821,21 +821,18 @@ func (m *model) startSynth(agent, goal string) tea.Cmd {
 	return synthesizeCmd(m.root, agent, goal, m.form.synthSeq)
 }
 
-// enterVerifierStep advances to the verifier step and, unless the agent has
-// already designed a verifier for this exact goal, kicks off synthesis — the
-// verifier is designed up front from the goal, not inferred blind. Inference
-// (prefilled in openForm) stays as the fallback when synthesis fails.
+// enterVerifierStep advances to the verifier step and composes a hybrid
+// instantly: the command gates are already prefilled (openForm), and the ask
+// question defaults to the goal so the agent judges goal-completion each
+// iteration. No agent call here — the judgment moves inline to verify-time,
+// where the user already waits on the agent, instead of blocking loop creation
+// for minutes. tab on the step is the optional polish that designs the gates.
 func (m *model) enterVerifierStep() tea.Cmd {
 	m.form.step = stepVerifier
-	goal := strings.TrimSpace(m.form.goal)
-	agents := m.form.selectedAgents()
-	if goal == "" || len(agents) == 0 {
-		return nil
+	if !m.form.askEdited {
+		m.form.ask = strings.TrimSpace(m.form.goal)
 	}
-	if m.form.proposedBy != "" && m.form.synthGoal == goal {
-		return nil // already have a proposal for this goal
-	}
-	return m.startSynth(agents[0], goal)
+	return nil
 }
 
 func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -887,13 +884,25 @@ func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case stepVerifier:
-		if key == "tab" {
+		switch key {
+		case "up", "down":
+			m.form.verifierField = 1 - m.form.verifierField
+			return m, nil
+		case "tab":
 			agents := m.form.selectedAgents()
 			if len(agents) == 0 {
-				m.say("pick an agent first — it does the proposing")
+				m.say("pick an agent first — it designs the checks")
 				return m, nil
 			}
+			m.form.verifierField = 0
 			return m, m.startSynth(agents[0], strings.TrimSpace(m.form.goal))
+		}
+		if m.form.verifierField == 1 {
+			if next := editText(m.form.ask, key, msg.Text, 500); next != m.form.ask {
+				m.form.ask = next
+				m.form.askEdited = true
+			}
+			break
 		}
 		if next := editText(m.form.verifier, key, msg.Text, 500); next != m.form.verifier {
 			m.form.verifier = next
@@ -949,8 +958,8 @@ func (m model) wizardAdvance() (tea.Model, tea.Cmd) {
 		// inferred default.
 		return m, m.enterVerifierStep()
 	case stepVerifier:
-		if strings.TrimSpace(f.verifier) == "" {
-			m.say("no verifier, no loop — type the command that proves the goal")
+		if len(f.resolvedStages()) == 0 {
+			m.say("no verifier, no loop — set a check, an ask question, or both")
 			return m, nil
 		}
 	case stepBudget:

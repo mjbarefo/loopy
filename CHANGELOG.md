@@ -26,15 +26,19 @@ Homebrew tap.
 
 ### Changed
 
-- Monitor wizard: the verifier is now designed by the agent for your goal,
-  automatically. After you pick the goal and agent, the wizard asks the
-  agent to propose a goal-testing verifier (the step shows "<agent> is
-  designing the verifier…"); the proposal lands in the editable field and
-  enter is still your sign-off. Inference is the fallback when the agent
-  can't propose one, and `tab` re-asks. Loops are no longer started against
-  a blind inferred default that can't tell whether the goal was met. (The
-  `loopy run` CLI is unchanged: inference by default, `--verify auto` to
-  synthesize.)
+- Monitor wizard: the verifier step is now a **hybrid, composed instantly** —
+  no more multi-minute pause on loop creation. It lands with two fields:
+  `checks` (command gates, prefilled from inference) and `ask` (a question
+  the agent answers PASS/FAIL each iteration, defaulting to your goal),
+  switched with ↑↓. Either can be cleared for a command-only or ask-only
+  verifier; enter is your sign-off. The agent's judgment now happens inline
+  at verify-time instead of blocking the wizard up front. `tab` is the
+  optional polish: it still asks the agent to design tighter command gates.
+  (Replaces the always-on up-front synthesis; the `loopy run` CLI is
+  unchanged.)
+- Monitor verifier tab: ask stages in the per-stage scoreboard wear an `ask`
+  tag (a word, not just color) and show their question, so a green reached by
+  the agent's judgment reads distinctly from one a shell command proved.
 - Monitor: a loop that parks green at baseline (the verifier passed before
   the agent ever ran) no longer looks like a win. It gets the yellow `!` in
   the rail and title, its own header count ("already green — check the
