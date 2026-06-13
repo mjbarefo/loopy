@@ -654,6 +654,25 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   The PTY smoke now injects real SGR mouse sequences and asserts the OSC 52
   write reaches the terminal.
 
+- **2026-06-13 — Baseline green is named everywhere, and long text wraps.**
+  The owner's first real drive hit the baseline-green trap head-on: a "build
+  AGENTS.md" loop kept the inferred `make check` verifier, parked green at
+  0 iterations, and read like a success ("1 green to review", green ✓ in
+  the rail) while codex never ran. The calls: a baseline-green loop now
+  carries the yellow `!` in the rail and title, leaves the "green to
+  review" header bucket for its own "already green — check the verifier",
+  the title says "green at baseline (the agent never ran)", and the
+  verifier tab's verdict refuses to celebrate ("this verifier may not test
+  the goal") — the verifier-truth status on disk is untouched; only the
+  presentation stops conflating "verifier green" with "goal met". Second
+  call: the detail header's goal (≤3 lines) and activity (≤2 lines) now
+  word-wrap under hanging indents instead of truncating — `WrapDisplay` in
+  internal/loop is display-width aware; the header's height is counted, not
+  assumed, so the scroll math, the mouse hit-test, and `--once` sizing all
+  derive it from one builder (`detailHeaderLines`). The welcome splash
+  gains one dim line naming the mouse and `c`, because features nobody
+  discovers don't exist.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -76,7 +76,8 @@ func welcomeFrame(s frameState, root string) string {
 	case !s.agentsRegistered:
 		hint = "press any key — one step left: register an agent"
 	}
-	lines = append(lines, cell{}, styled(s.color, sgrCyan, hint))
+	lines = append(lines, cell{}, styled(s.color, sgrCyan, hint),
+		styled(s.color, sgrDim, "the mouse works: wheel scrolls · click selects · c copies the next command"))
 
 	// Center the block.
 	blockW := 0

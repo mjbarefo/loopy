@@ -8,6 +8,18 @@ Homebrew tap.
 
 ## [Unreleased]
 
+### Changed
+
+- Monitor: a loop that parks green at baseline (the verifier passed before
+  the agent ever ran) no longer looks like a win. It gets the yellow `!` in
+  the rail and title, its own header count ("already green — check the
+  verifier") instead of joining "green to review", and the verifier tab's
+  verdict says plainly that the verifier may not test the goal.
+- Monitor: the goal (up to three lines) and the activity line (up to two)
+  wrap under hanging indents instead of truncating to one line, so long
+  goals and park reasons stay readable. The welcome splash names the mouse
+  bindings so they can be discovered.
+
 ### Added
 
 - Monitor: mouse support. The wheel scrolls the pane under the pointer —
