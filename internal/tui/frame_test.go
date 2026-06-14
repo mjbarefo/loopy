@@ -860,6 +860,40 @@ func TestFrameColorDiet(t *testing.T) {
 	}
 }
 
+// TestDetailFooterAdvertisesAcceptReject: a green loop's accept/reject keys are
+// otherwise invisible — the focused-detail footer is where a reviewer finds
+// them. Parked advertises reject only (accepting a red loop is a CLI override).
+func TestDetailFooterAdvertisesAcceptReject(t *testing.T) {
+	s := wideState()
+	s.focusDetail = true
+	s.loops[0] = loop.LoopView{
+		ID: "tidy-readme", Goal: "tidy the readme", Agent: "claude",
+		Status: loop.StatusGreen, IterationsUsed: 1, MaxIterations: 5,
+		WallClockUsed: "1m", MaxWallClock: "30m",
+		NextCommand: "loopy review tidy-readme",
+	}
+	last := footerLine(t, renderFrame(s))
+	if !strings.Contains(last, "a accept · r reject") {
+		t.Errorf("a focused green loop must advertise accept/reject: %q", last)
+	}
+
+	s.loops[0].Status = loop.StatusParked
+	s.loops[0].ParkedReason = "budget exhausted"
+	last = footerLine(t, renderFrame(s))
+	if !strings.Contains(last, "r reject") {
+		t.Errorf("a focused parked loop must advertise reject: %q", last)
+	}
+	if strings.Contains(last, "a accept") {
+		t.Errorf("a parked loop is not green; accepting it is a CLI override, not a footer hint: %q", last)
+	}
+
+	// A running loop keeps the plain back/keys chain — no decision to offer.
+	s.loops[0].Status = loop.StatusRunning
+	if last := footerLine(t, renderFrame(s)); !strings.Contains(last, "esc back · ? keys") || strings.Contains(last, "accept") {
+		t.Errorf("a running loop offers no accept/reject hint: %q", last)
+	}
+}
+
 // TestFrameBaselineGreenHonesty: green after zero iterations means the agent
 // never ran — the monitor says so everywhere instead of celebrating: the
 // header bucket, the rail glyph, the title phrase, and the activity line.
