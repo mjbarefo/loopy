@@ -792,6 +792,23 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   registered agent, no model call of loopy's own. `internal/loop/gate.go`;
   `SynthesizeVerifier` now takes a `context.Context`.
 
+- **2026-06-13 — The monitor can `git apply` an accepted loop's diff to the
+  working tree (the `A` key).** The live drive ended with the owner green and
+  accepted but with no help *running* the handoff — `o` only printed the
+  command on exit, `c` only copied it. `A` now applies the accepted loop's
+  durable `final-diff.patch` onto his checkout, behind a y/n confirm, then
+  says "applied — review, commit, and open your PR". **This is the monitor's
+  only write to the user's checkout, and it is deliberately the weakest one:
+  `git apply` to the working tree, never a commit, push, or merge — invariant
+  2 holds** (the patch lands as an *uncommitted* change the human reviews and
+  ships themselves). It confirms first because, unlike every other monitor
+  action, it touches files outside `.loopy/`. The patch applies atomically, so
+  a conflict leaves the tree untouched and surfaces as a flash. Implemented as
+  a direct `git apply` (not via the loopy CLI — it is not a loop-state write):
+  `runGit` in `internal/tui/tui.go`, `requestApply`/`runApply` in `model.go`.
+  The accepted loop has left the rail, so the target is the newest accepted
+  loop (the same one the quiet rail shows and `c` copies).
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

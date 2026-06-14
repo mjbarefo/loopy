@@ -87,6 +87,17 @@ func runCLI(root string, args ...string) (string, error) {
 	return string(out), err
 }
 
+// runGit runs git in the repo root. The monitor uses it for exactly one
+// thing — `git apply` of an accepted loop's durable diff onto the working
+// tree (the A key). It is not a loop-state write and never commits, pushes,
+// or merges; the user would otherwise paste the same command themselves.
+func runGit(root string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // spawnResume starts a detached `loopy resume <id>` engine. The monitor
 // itself never writes loop state — the child is a normal engine process with
 // the usual lock; its plain progress stream is redundant with the state

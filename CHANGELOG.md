@@ -10,6 +10,14 @@ Homebrew tap.
 
 ### Added
 
+- Monitor: **`A` applies an accepted loop's diff to your working tree.**
+  After you accept a green loop, its diff was durable but you had to copy or
+  retype `git apply <…/final-diff.patch>` yourself; now `A` runs it for you,
+  behind a y/n confirm. This is the only place the monitor touches your
+  checkout, and it is the weakest possible touch — `git apply` to the working
+  tree, **never a commit, push, or merge** — so the patch lands as an
+  uncommitted change you review, commit, and ship. A patch that doesn't fit
+  leaves your tree untouched and says so.
 - The agent now **designs a deterministic gate in the background** for an
   ask-only loop. Start a loop with just a plain-English question (the instant
   hybrid) and it runs immediately; meanwhile loopy asks your agent to propose

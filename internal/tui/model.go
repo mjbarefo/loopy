@@ -67,9 +67,15 @@ type model struct {
 	confirmDelete bool
 	confirmAccept bool
 	confirmReject bool
-	showHelp      bool
-	flash         string
-	flashUntil    time.Time
+	confirmApply  bool
+	// applyID/applyPath capture the apply target when confirmApply is set: an
+	// accepted loop leaves the rail, so the target is usually the newest
+	// accepted loop, not the current selection.
+	applyID    string
+	applyPath  string
+	showHelp   bool
+	flash      string
+	flashUntil time.Time
 
 	// exitHint is printed by the watch command after the program exits —
 	// the deep link out of the monitor (o hands off the next command).
@@ -322,7 +328,7 @@ func (m model) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = false
 		return m, nil
 	}
-	if m.form.active || m.confirmAbort || m.confirmDelete || m.confirmAccept || m.confirmReject {
+	if m.form.active || m.confirmAbort || m.confirmDelete || m.confirmAccept || m.confirmReject || m.confirmApply {
 		return m, nil
 	}
 	switch t := hitTest(m.frameState(), msg.X, msg.Y); t.kind {
@@ -417,6 +423,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.say("reject cancelled")
 		}
 		m.confirmReject = false
+		return m, nil
+	}
+	if m.confirmApply {
+		switch key {
+		case "y":
+			m.runApply()
+		case "n", "esc", "q", "ctrl+c":
+			m.say("apply cancelled")
+		}
+		m.confirmApply = false
 		return m, nil
 	}
 
@@ -568,6 +584,12 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.say("sent to the clipboard: %s", cmd)
 		return m, tea.SetClipboard(cmd)
+	case "A":
+		// Apply an accepted loop's diff to the working tree. This is the one
+		// place the monitor touches the user's checkout, so it confirms first —
+		// and it is git apply only: loopy never commits, pushes, or merges.
+		m.requestApply()
+		return m, nil
 	}
 	return m, nil
 }
@@ -700,6 +722,48 @@ func (m *model) requestReject() {
 	m.reload()
 }
 
+// applyTarget is the accepted loop whose durable diff the A key applies: a
+// pinned accepted selection if there is one, otherwise the newest accepted
+// loop (the same one the quiet rail shows and c copies). Nil when nothing has
+// been accepted yet.
+func (m *model) applyTarget() *loop.LoopView {
+	if v := m.current(); v != nil && v.Status == loop.StatusAccepted && v.FinalDiffPath != "" {
+		return v
+	}
+	return newestAcceptedWithCommand(m.loops)
+}
+
+// requestApply stages the apply target for a y/n confirmation. The actual
+// git apply runs in runApply, so the captured path survives a selection that
+// shifts under a background reload.
+func (m *model) requestApply() {
+	v := m.applyTarget()
+	if v == nil || v.FinalDiffPath == "" {
+		m.say("nothing to apply — accept a green loop first (a)")
+		return
+	}
+	m.applyID = v.ID
+	m.applyPath = v.FinalDiffPath
+	m.confirmApply = true
+}
+
+// runApply applies the accepted loop's durable diff to the user's working
+// tree. This is loopy's only write to the checkout, and it is deliberately
+// the *weakest* one: git apply to the working tree, never a commit, push, or
+// merge (invariant 2). The patch applies atomically — a conflict leaves the
+// tree untouched and surfaces as a flash.
+func (m *model) runApply() {
+	if m.applyPath == "" {
+		m.say("nothing to apply")
+		return
+	}
+	if out, err := runGit(m.root, "apply", m.applyPath); err != nil {
+		m.say("git apply failed (your tree is untouched): %s", firstLine(out, err))
+		return
+	}
+	m.say("applied %s to your working tree — review it, commit, and open your PR", m.applyID)
+}
+
 // firstLine flattens a child command's output (or its error) to one flash.
 func firstLine(out string, err error) string {
 	if t := strings.TrimSpace(out); t != "" {
@@ -778,6 +842,8 @@ func (m model) frameState() frameState {
 		confirmDelete:    m.confirmDelete,
 		confirmAccept:    m.confirmAccept,
 		confirmReject:    m.confirmReject,
+		confirmApply:     m.confirmApply,
+		applyID:          m.applyID,
 		flash:            m.flash,
 		showHelp:         m.showHelp,
 		loadErr:          m.loadErr,
