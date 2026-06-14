@@ -765,6 +765,33 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   hierarchy) is deferred; it touches the counted header geometry
   (`detailHeaderLines` → scroll math + hit-test) and deserves its own pass.
 
+- **2026-06-13 — Background gate synthesis: the agent designs deterministic
+  gates while the loop already runs.** Reconciles two prior owner decisions —
+  he loved an agent-designed command gate (`git status --short && git diff
+  --check && …`) but the #31 blocking 3-min synthesis pause at creation was
+  killed. New default (`Loop.AutoGate`, set by the wizard): an **ask-only**
+  loop starts instantly on its instant hybrid, and the engine kicks
+  `SynthesizeVerifier` in a background goroutine. When a proposal lands it is
+  **folded in additively** at an iteration boundary, *ahead* of the ask stage
+  (cheap deterministic check short-circuits before the agent call). **Where:**
+  a goroutine started in `RunEngine` (`startGateSynthesis`), delivering the
+  gate on a channel the engine drains non-blockingly at the boundary; the
+  engine stays the single writer of loop state — the goroutine only computes.
+  The synthesis context is cancelled when the engine returns, tearing the
+  throwaway worktree down if the loop parks first. **No re-sign-off** (the one
+  open question): the loop already runs under a human-approved ask verifier,
+  and an additive gate only makes green *stricter*, never auto-accepts — the
+  human still seals at review (invariant 2), so adding it owes no new consent
+  (invariant 1 is satisfied: the loop already has a verifier). **Eligibility:**
+  ask-only only — a loop that already carries a command stage made a
+  deliberate choice loopy must not override; this also makes it idempotent
+  across resumes (once folded in, the verifier is no longer ask-only).
+  **Failure/timeout/already-green = no-op:** the channel is never closed on a
+  drop (a non-blocking receive must not fire on a zero gate); the ask-only
+  verifier simply stays. Invariant 4 holds — synthesis shell-executes the
+  registered agent, no model call of loopy's own. `internal/loop/gate.go`;
+  `SynthesizeVerifier` now takes a `context.Context`.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

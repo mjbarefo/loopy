@@ -119,6 +119,12 @@ type Loop struct {
 	Budget   Budget      `json:"budget"`
 	Stuck    StuckPolicy `json:"stuck"`
 
+	// AutoGate asks the engine to design a deterministic command gate in the
+	// background — for an ask-only verifier — and fold it in additively at an
+	// iteration boundary. The loop runs instantly meanwhile; the gate only
+	// makes green stricter, never auto-accepts, so it needs no re-sign-off.
+	AutoGate bool `json:"auto_gate,omitempty"`
+
 	Status         string   `json:"status"`
 	ParkedReason   string   `json:"parked_reason,omitempty"`
 	IterationsUsed int      `json:"iterations_used"`

@@ -30,6 +30,10 @@ type CreateOptions struct {
 	// IDHint, when set, seeds the loop ID instead of the goal (race mode
 	// appends the agent name so competitors get distinct IDs).
 	IDHint string
+	// AutoGate, on an ask-only verifier, lets the engine design a
+	// deterministic command gate in the background and fold it in (see
+	// Loop.AutoGate). Ignored when the verifier already has a command stage.
+	AutoGate bool
 }
 
 // CreateLoop validates options, claims an ID, creates the isolated worktree,
@@ -116,6 +120,7 @@ func CreateLoop(root string, opts CreateOptions) (Loop, error) {
 		Agent:          agentName,
 		Reviewer:       reviewerName,
 		Verifier:       opts.Verifier,
+		AutoGate:       opts.AutoGate,
 		Budget:         budget,
 		Stuck:          stuck,
 		Status:         StatusRunning,
@@ -187,6 +192,13 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 		ev.LoopStarted(l)
 	}
 
+	// Background gate: for an ask-only loop, design a deterministic command
+	// gate while the loop already iterates, and fold it in at a boundary
+	// below. nil channel when not eligible. stopGate cancels an in-flight
+	// synthesis (and its throwaway worktree) when the engine returns.
+	gateCh, stopGate := startGateSynthesis(root, l)
+	defer stopGate()
+
 	iterations, err := LoadIterations(root, l.ID)
 	if err != nil {
 		return l, err
@@ -251,6 +263,23 @@ func RunEngine(root, loopID string, ev Events) (Loop, error) {
 		// Stuck detection: park early instead of burning budget.
 		if reason, stuck := detectStuck(l, iterations); stuck {
 			return parkLoop(root, l, reason, ev)
+		}
+
+		// Boundary fold-in of the background gate: we are committed to another
+		// iteration (not green, within budget, not stuck), so a gate that
+		// arrived now verifies the upcoming run. Additive — only makes green
+		// stricter; the human still seals at review.
+		if gateCh != nil {
+			select {
+			case gate := <-gateCh:
+				gateCh = nil
+				l = foldInGate(l, gate)
+				if err := SaveLoop(root, l); err != nil {
+					return l, err
+				}
+				ev.note("folded in a deterministic gate the agent designed: %s", gate.Cmd)
+			default:
+			}
 		}
 
 		index := len(iterations)

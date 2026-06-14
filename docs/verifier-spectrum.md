@@ -94,6 +94,61 @@ stored as the project default; the goal-specific ask question never is. The
 monitor's verifier-tab scoreboard tags ask stages with the word `ask` (not
 just color) so judged greens read distinctly from mechanical ones.
 
+## Background gate synthesis (the agent designs the gate, for free)
+
+The synthesis pause was retired, but the *value* it produced — an
+agent-designed deterministic gate, tighter than anything inference can guess —
+was worth keeping. We get it back without the pause by moving it off the
+critical path entirely.
+
+When a loop starts **ask-only** (`Loop.AutoGate`, set by the wizard), the engine
+kicks `SynthesizeVerifier` in a **background goroutine** at loop start. The loop
+iterates immediately under its instant ask verifier; meanwhile the agent
+explores a throwaway worktree and proposes a fast shell command that is red
+until the goal is met. When the proposal lands, the engine **folds it in
+additively at an iteration boundary**, *ahead* of the ask stage:
+
+```
+before:  [ ask: "is the goal met?" ]
+after:   [ gate: <agent-designed cmd> ,  ask: "is the goal met?" ]
+```
+
+The gate runs first, so the cheap deterministic check short-circuits before the
+agent is asked again — the same fast→slow ordering as a hand-written hybrid,
+arrived at automatically.
+
+Design rules:
+
+- **The engine stays the single writer of loop state.** The goroutine only
+  *computes* a proposed stage and hands it back on a channel; the engine drains
+  it non-blockingly and does the `SaveLoop` itself, at a boundary — never
+  mid-iteration.
+- **No re-sign-off.** The loop already runs under a human-approved ask
+  verifier. An additive gate only makes "green" *stricter* — it can never
+  auto-accept — and the human still seals the diff at review (invariant 2). So
+  folding it in owes no new consent, and invariant 1 (no verifier, no loop) is
+  already satisfied. The human's `enter` at creation still bought a real
+  verifier; the gate just sharpens it.
+- **Ask-only only.** A loop that already carries a command stage made a
+  deliberate choice loopy must not override. This also makes the fold-in
+  idempotent across engine resumes: once the gate is in, the verifier is no
+  longer ask-only, so nothing re-synthesizes.
+- **Failure, timeout, or already-green = silent no-op.** A proposal that passes
+  at HEAD is no gate (it does not test the goal) and is dropped; a failed or
+  cancelled synthesis just leaves the ask-only verifier in place. The delivery
+  channel is never closed on a drop, so the engine's non-blocking receive can
+  never fire on a zero-value gate.
+- **Cancellation.** `SynthesizeVerifier` now takes a context; the engine
+  cancels it when the loop parks, tearing the throwaway worktree down if
+  synthesis was still running (the common fast-green case).
+- **Invariant 4 holds.** Synthesis shell-executes the registered agent exactly
+  as before — loopy makes no model call of its own — so the no-API-key demo and
+  inference stay command-only and never trigger it.
+
+`tab` in the wizard remains the *interactive* synthesis (design the gate up
+front, see it before signing); background synthesis is the same engine reused
+on the loop's own time when the user chose the instant ask path instead.
+
 ## Data model
 
 Extend `Stage` (`internal/loop/models.go`); existing `loop.json` files keep

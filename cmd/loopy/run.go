@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -329,7 +330,7 @@ func synthesizeVerifier(root, agentName, race, goal string, interactive bool) ([
 		return nil, err
 	}
 	fmt.Printf("asking %s to propose a verifier for this goal (one model call)…\n", name)
-	res, err := loop.SynthesizeVerifier(root, name, goal)
+	res, err := loop.SynthesizeVerifier(context.Background(), root, name, goal)
 	if err != nil {
 		return nil, err
 	}

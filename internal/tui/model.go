@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -35,7 +36,7 @@ type synthDoneMsg struct {
 
 func synthesizeCmd(root, agent, goal string, seq int) tea.Cmd {
 	return func() tea.Msg {
-		res, err := loop.SynthesizeVerifier(root, agent, goal)
+		res, err := loop.SynthesizeVerifier(context.Background(), root, agent, goal)
 		return synthDoneMsg{seq: seq, res: res, err: err}
 	}
 }

@@ -10,6 +10,18 @@ Homebrew tap.
 
 ### Added
 
+- The agent now **designs a deterministic gate in the background** for an
+  ask-only loop. Start a loop with just a plain-English question (the instant
+  hybrid) and it runs immediately; meanwhile loopy asks your agent to propose
+  a fast shell command that is red until the goal is met (`test -f x && make
+  check`, `git diff --check`, …). When the proposal lands it folds into the
+  live verifier *ahead* of the question, so the cheap deterministic check
+  short-circuits before the agent is asked again. It is purely additive — it
+  only makes "green" stricter, never auto-accepts (you still seal the diff at
+  review) — and a failed, timed-out, or already-passing proposal is a silent
+  no-op that leaves your question-only verifier exactly as it was. No model
+  call of loopy's own: it runs your registered agent, so the no-API-key demo
+  is untouched. (Design: `docs/verifier-spectrum.md`.)
 - Verifier stages can now be an **ask** stage: instead of a shell command, a
   stage poses a yes/no question and a registered agent answers it about the
   current worktree (`PASS` / `FAIL: <reason>`). Use it for goals no shell
