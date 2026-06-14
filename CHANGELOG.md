@@ -8,6 +8,19 @@ Homebrew tap.
 
 ## [Unreleased]
 
+### Changed
+
+- Monitor wizard: the verifier step now **defaults to the agent designing the
+  check.** The `checks` field starts blank instead of prefilled from inference,
+  so the agent — not a guessed command like `make check` — is the default gate
+  designer: with the goal as the ask question, the engine designs a
+  goal-specific deterministic gate in the background once the loop starts and
+  folds it in ahead of the question (no up-front pause). `tab` (design the gate
+  now, up front) is promoted from a dim footer hint to its own prominent line.
+  Inference no longer feeds the wizard (it still backs `loopy init`/`loopy run`)
+  and is no longer silently stored as the project default; an explicit project
+  default still prefills the field. (Design: `docs/verifier-spectrum.md`.)
+
 ## [v0.1.0] - unreleased
 
 The first release: the complete loop engine and review workflow.
