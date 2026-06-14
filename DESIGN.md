@@ -108,12 +108,27 @@ The central object. A loop is defined once and then runs itself.
 
 - **Goal** — natural-language objective, plus optional constraints. Written into every
   iteration's prompt.
-- **Verifier** — an ordered list of shell commands; the loop is **green** when all exit
-  0. Ordered fast-to-slow so cheap failures (fmt, vet) short-circuit before expensive
-  ones (tests, e2e). The verifier is the loop's definition of done *and* its feedback
-  signal: stage name + output tail of the first failing stage is what the agent sees
-  next iteration. **A loop cannot be created without a verifier.** This is the
-  load-bearing design constraint — no verifier, no loop.
+- **Verifier** — an ordered list of stages; the loop is **green** when all pass.
+  Ordered fast-to-slow so cheap failures short-circuit before expensive ones. The
+  verifier is the loop's definition of done *and* its feedback signal: stage name +
+  output tail of the first failing stage is what the agent sees next iteration.
+  **A loop cannot be created without a verifier.** This is the load-bearing design
+  constraint — no verifier, no loop.
+
+  Stages sit on a spectrum by what produces their verdict: a **command stage** runs a
+  shell command (`sh -c`; exit 0 = pass) — deterministic, instant, no API key; an
+  **ask stage** poses a yes/no question to a registered agent (`PASS` / `FAIL: <reason>`
+  on the final output line) — for goals no shell command can express ("is the prose
+  accurate?", "does this read cleanly?"). A **hybrid** is the ordered mix the wizard
+  reaches for by default: cheap deterministic gates first, an ask stage last, so the
+  agent call only runs once the mechanical gates are green. The wizard composes a hybrid
+  instantly (inferred command gates + a goal-derived ask question); `tab` triggers the
+  optional background synthesis of tighter command gates. For an ask-only loop, the
+  engine also designs a deterministic gate in the background and folds it in additively
+  ahead of the ask — making green stricter without re-sign-off — once the proposal
+  lands. Ask stages fail closed (timeout, unrunnable agent, or missing verdict all read
+  as `FAIL`). The no-API-key demo and verifier inference produce command stages only.
+  See `docs/verifier-spectrum.md` for full design.
 - **Budget** — hard caps: max iterations and max wall-clock (later: max cost). Budgets
   are not advisory; exhaustion parks the loop.
 - **Escalation** — what happens when the loop can't get to green (see Stuck detection).
@@ -163,11 +178,14 @@ transcript, and the iteration history; `loopy accept` records an audited decisio
 evidence and frees the worktree. Accepting a non-green loop requires
 `--override --reason <text>`, recorded verbatim — same discipline as crux's seal.
 
-### Reviewer agent (post-v0)
+### Reviewer agent
 
-The creator shouldn't grade its own work. An optional reviewer stage runs a *different*
-registered agent with review-only instructions against the green diff before parking;
-its critique is attached as evidence, not a gate. This is Boris's sub-agent
+The creator shouldn't grade its own work. `loopy run --reviewer <name>` runs a
+*different* registered agent against the green diff before parking; its critique is
+recorded as `critique.md` and shown by `loopy review` — evidence, never a gate. The
+reviewer agent must differ from the loop's author agent (refused at creation). Any
+worktree changes the reviewer makes are reverted; a reviewer failure, timeout, or
+missing agent does not prevent the loop from parking green. This is Boris's sub-agent
 verification pattern and slots in cleanly after the verifier.
 
 ## Default workflow
@@ -202,25 +220,35 @@ loopy run "fix flaky importer test" \
 ```bash
 loopy init
 loopy agent add <name> --cmd "claude -p {prompt} --permission-mode acceptEdits" [--default]
+loopy agent check [name]                # smoke-run agents; catches trust/auth failures
 loopy agent list | remove <name>
 loopy "<goal>"                          # sugar for: loopy run "<goal>" with defaults
-loopy run "<goal>" [--verify cmd]... [--agent name] [--race a,b] \
-         [--max-iters N] [--max-time dur] [--forbidden-path p]... [--constraint text]...
+loopy run "<goal>" [--verify cmd|auto]... [--agent name] [--race a,b] \
+         [--reviewer name] \
+         [--max-iters N] [--max-time dur] [--forbidden-path p]... [--constraint text]... \
+         [--json]                       # NDJSON event stream; --race ends with verdict event
+loopy resume <loop-id> [--json]
 loopy list [--json]
 loopy status [loop-id] [--json] [--no-color]
 loopy watch [loop-id] [--once]          # monitor TUI; --once = one plain ANSI-free frame
 loopy pause | resume | abort <loop-id>
-loopy log <loop-id> [--iter N]
+loopy log <loop-id> [--iter N] [--json]
 loopy review <loop-id>
 loopy accept <loop-id> [--override --reason text]
 loopy reject <loop-id> [--reason text]
+loopy delete <loop-id>                  # removes loop + evidence; logbook keeps one line
+loopy judge <id> <id> [...]             # rank finished loops by evidence (used by --race)
 loopy logbook [--json]                  # durable project memory of accepted/rejected loops
 loopy doctor [--json]
 loopy version
 ```
 
-Agent command templates substitute `{prompt}`, `{worktree}`, `{loop_id}`, `{goal}`,
-`{iteration}`. Exit codes: 0 success, 1 runtime failure, 2 usage error.
+Agent command templates substitute `{prompt}`, `{prompt_file}`, `{worktree}`,
+`{loop_id}`, `{goal}`, `{iteration}` — all values shell-quoted. `--verify auto` asks
+the registered agent to propose a goal-testing command in a throwaway worktree; the
+proposal is trial-run and confirmed interactively before use, never stored as the
+project default. Exit codes: 0 success, 1 runtime failure, 2 usage error; `loopy run`
+exits 0 only when the loop parks green.
 
 ## Execution model: daemonless, resumable
 
@@ -245,10 +273,20 @@ demands mid-phase control.
 ## The monitor
 
 `loopy watch` is the product's face: a loop monitor, not a status board. Unlike crux's
-strictly read-only dashboard, the monitor takes actions — but only the safe,
-reversible ones (pause / resume / abort / open review). Accept and reject stay in the
-CLI where they are validated and audited; the monitor deep-links to them by always
-showing the exact next command in the footer.
+strictly read-only dashboard, the monitor takes actions. Control actions are contextual
+on the loop's state: `p` pauses a running loop; `a` aborts a moving loop and accepts a
+parked green one; `r` resumes a paused loop and rejects a parked one; `d` deletes a
+loop after confirmation. Each decision (`a` accept, `r` reject) shells out to the
+audited CLI behind a y/n confirmation, so the audit discipline is identical to using
+the CLI directly. Accepting a non-green loop remains CLI-only (`loopy accept --override
+--reason`). `A` applies an accepted loop's `final-diff.patch` to your working tree via
+`git apply` (behind a y/n confirm) then removes the loop — this is the monitor's only
+write to the user's checkout, and it is deliberately the weakest: `git apply` to the
+working tree, never a commit, push, or merge. The monitor also supports mouse: the
+scroll wheel scrolls the pane under the pointer, clicking a rail row selects it,
+clicking a nav name switches views; `c` copies the next command to the system clipboard
+via OSC 52. The footer always shows the exact next command, so the monitor is never a
+dead end.
 
 ```
 ┌ loops ──────────────┬ fix-csv-quoting · running · iter 3/8 · 12m left ─────────┐
@@ -338,33 +376,51 @@ maybe an idle monitor easter egg — and nowhere in the command surface.
 
 ## Milestones
 
-- **M0 — skeleton**: repo scaffold, three-layer architecture, CI (fmt/vet/test/build +
-  cross-compile), `loopy init`, `agent add`, and a *single-iteration* loop: worktree,
-  one agent run, verifier, recorded iteration. (A loop that runs once is just crux's
-  run+collect — this milestone is mostly porting.)
-- **M1 — the loop**: feedback composition, multi-iteration engine, budgets, stuck
+All M0–M4 milestones shipped and merged to `main` as of 2026-06-11.
+
+- **M0 — skeleton** ✓: repo scaffold, three-layer architecture, CI (fmt/vet/test/build
+  + cross-compile), `loopy init`, `agent add`.
+- **M1 — the loop** ✓: feedback composition, multi-iteration engine, budgets, stuck
   detection, pause/resume/abort, crash resumability, `status`/`log`/`list` plain
   output. **This is the product**; everything after is leverage.
-- **M2 — the monitor**: Bubble Tea v2 spike, then the monitor with live tailing,
-  iteration timeline, drill-downs, control actions, `--once`, PTY smoke tests.
-- **M3 — judgment**: race mode, ported judge, `review`/`accept`/`reject`, logbook.
-- **M4 — ship**: release pipeline (RC-first), six-target archives, homebrew formula,
-  demo script (shell-agent loop in a throwaway repo, no API keys), sample `.loopy/`
-  snapshot in `examples/`.
-- **Post-v0**: reviewer agent, scheduled loops (Boris's "automations" — recurring
-  discovery/triage loops), cost budgets, notification hooks.
+- **M2 — the monitor** ✓: Bubble Tea v2, the monitor with live tailing, iteration
+  timeline, drill-downs, control actions, `--once`, PTY smoke tests. The monitor
+  evolved past M2 with: contextual accept/reject keys, the `A` apply-and-remove flow,
+  mouse support, fleet view (iterated and resolved back to the dense rail), the wizard
+  (five-step new-loop form), the splash/picker/front-door, and the verifier spectrum UI.
+- **M3 — judgment** ✓: race mode, ported judge, `review`/`accept`/`reject`, logbook,
+  `loopy judge` as a standalone command.
+- **M4 — ship** ✓: RC-first release pipeline, six-target CGO-free archives, homebrew
+  formula, demo script (shell-agent loop, no API keys), sample `.loopy/` in
+  `examples/`.
+- **Post-v0 shipped**: reviewer agent (`--reviewer`), the verifier spectrum
+  (command · ask · hybrid), `--verify auto`, background gate synthesis, `loopy delete`,
+  `loopy agent check`, `--json` on run/resume (NDJSON streams), agent-blocked park
+  reasons with fix hints.
+- **Post-v0 open**: scheduled/recurring loops (Boris's "automations"), cost budgets,
+  notification hooks, shell completions.
 
 ## Open questions
 
 - **Prompt composition limits** — how much iteration history to carry forward beyond
   the last failure tail; whether a rolling digest beats a fixed window.
-- **Verifier inference UX** — confirm-once-and-store is the plan; how loud to be when
-  inference guesses wrong.
-- **Headless agent matrix** — exact non-interactive invocations and permission flags
-  per tool (Claude Code, Codex, Gemini CLI) belong in a tested, documented table.
-- **Cost tracking** — agents don't report spend uniformly; may start as wall-clock
-  proxy only.
-- **Windows** — crux's known gaps (interactive resize polling) carry over; keep parity.
+- **Verifier inference UX** — confirm-once-and-store ships; the open question is how
+  loud to be when inference guesses wrong (baseline-green is the symptom; `--verify
+  auto` and the wizard's auto-synthesis are the current mitigations).
+- **Headless agent matrix** *(partially resolved)* — claude and codex invocations are
+  tested and documented (`docs/agents.md`); gemini's `--skip-trust` flag is confirmed
+  required for loop worktrees. The table is live but will grow as more CLIs are tested.
+- **Cost tracking** — agents don't report spend uniformly; currently wall-clock proxy
+  only. Cost budgets remain post-v0.
+- **Windows** — crux's known gaps (interactive resize polling) carry over; CI is
+  build+vet only on Windows (`sh` dependency); macOS/Linux are the supported targets.
+- **Stuck detection for ask stages** — ask stages produce varying natural-language
+  failure reasons, so `SameFailureRepeats` rarely trips; ask loops lean on
+  `NoChangeRepeats` (diff unchanged N times) and the hard budget. Whether a tighter
+  heuristic is warranted is open.
+- **Scheduled / recurring loops** — Boris's "automations" (recurring discovery/triage
+  loops that run on a schedule) are not yet designed. The `loopy run` exit-code
+  contract and `--json` stream make it composable from outside loopy for now.
 
 ## References
 
