@@ -825,6 +825,25 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   verifier, and generic bodies; every wrapped row keeps its source line's
   color. The bodies are scrolled, so extra rows are safe for the scroll math.
 
+- **2026-06-13 — Applying an accepted loop's diff (`A`) removes the loop.**
+  Owner ask after the live drive: once you `git apply` an accepted loop's diff,
+  that loop is done — its work has shipped into your tree — so it should leave
+  the (already quiet) rail instead of lingering. `A` now applies *then* deletes,
+  **only after a clean apply** (a conflicting patch leaves both the tree and the
+  loop untouched). The delete goes through the audited CLI (`loopy delete`),
+  like the `d` key — the monitor still never writes loop state itself. **What's
+  lost vs. kept:** `loopy delete` removes the loop's worktree, branch, and
+  evidence dir (prompts, iteration logs, the `final-diff.patch`), but the
+  `logbook.md` narrative keeps a line ("status at deletion: accepted"). The
+  diff itself is no longer the loop's to keep — it's in the working tree now and
+  reaches git history on commit — so deleting the durable copy is safe in a way
+  it was *not* before applying (the earlier "deleted an accepted loop and lost
+  final-diff.patch" footgun was a delete *without* an apply). The confirmation
+  says so ("git apply X, then remove the loop? … the logbook keeps a line").
+  `runApply` in `internal/tui/model.go`; the git mechanics split into a testable
+  `applyPatch`, the delete behind a `deleteLoop` seam so the coupling is
+  unit-tested without spawning the real CLI (which would re-run the test binary).
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

@@ -51,10 +51,11 @@ func TestApplyKeyNoTarget(t *testing.T) {
 	}
 }
 
-// runApply actually applies the durable diff to the working tree — and only
-// that: it is git apply, never a commit. The patch applies atomically.
-func TestRunApplyAppliesPatchToWorkingTree(t *testing.T) {
-	dir := t.TempDir()
+// gitRepoWithPatch builds a temp repo whose change.patch turns file.txt from
+// v1 to v2, with the tree restored to v1 — applying the patch reintroduces v2.
+func gitRepoWithPatch(t *testing.T) (dir, patchPath, target string) {
+	t.Helper()
+	dir = t.TempDir()
 	git := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -66,14 +67,12 @@ func TestRunApplyAppliesPatchToWorkingTree(t *testing.T) {
 	git("init")
 	git("config", "user.email", "t@example.com")
 	git("config", "user.name", "tester")
-	target := filepath.Join(dir, "file.txt")
+	target = filepath.Join(dir, "file.txt")
 	if err := os.WriteFile(target, []byte("v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git("add", ".")
 	git("commit", "-m", "base")
-
-	// Produce a patch that changes the file, then restore the tree to v1.
 	if err := os.WriteFile(target, []byte("v2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -84,51 +83,112 @@ func TestRunApplyAppliesPatchToWorkingTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	git("checkout", "--", "file.txt")
-	patchPath := filepath.Join(dir, "change.patch")
+	patchPath = filepath.Join(dir, "change.patch")
 	if err := os.WriteFile(patchPath, patch, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return dir, patchPath, target
+}
 
-	m := &model{root: dir, applyID: "demo", applyPath: patchPath}
-	m.runApply()
-
+// applyPatch actually applies the durable diff to the working tree — and only
+// that: it is git apply, never a commit. The patch applies atomically.
+func TestApplyPatchToWorkingTree(t *testing.T) {
+	dir, patchPath, target := gitRepoWithPatch(t)
+	if out, err := applyPatch(dir, patchPath); err != nil {
+		t.Fatalf("applyPatch: %v\n%s", err, out)
+	}
 	got, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != "v2\n" {
-		t.Fatalf("file not patched: %q (flash: %q)", got, m.flash)
+		t.Fatalf("file not patched: %q", got)
 	}
-	if m.flash == "" {
-		t.Fatal("a successful apply should confirm in the flash")
-	}
-
-	// The commit history is untouched — loopy applies, it never commits.
-	head := exec.Command("git", "log", "--oneline")
-	head.Dir = dir
-	out, _ := head.Output()
-	if n := len(string(out)); n == 0 {
-		t.Fatal("expected the base commit to remain")
+	// History untouched, change uncommitted: loopy applies, never commits.
+	log := exec.Command("git", "log", "--oneline")
+	log.Dir = dir
+	if out, _ := log.Output(); strings.Count(string(out), "\n") != 1 {
+		t.Fatalf("expected exactly the base commit, got:\n%s", out)
 	}
 	status := exec.Command("git", "status", "--porcelain")
 	status.Dir = dir
-	st, _ := status.Output()
-	if len(st) == 0 {
+	if st, _ := status.Output(); len(st) == 0 {
 		t.Fatal("the patch should be an uncommitted working-tree change")
 	}
 }
 
-// A failing apply (a patch that does not fit) leaves the tree untouched and
-// surfaces the failure rather than swallowing it.
-func TestRunApplyFailureKeepsTreeAndReports(t *testing.T) {
+func TestApplyPatchFailureReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	patchPath := filepath.Join(dir, "bad.patch")
-	if err := os.WriteFile(patchPath, []byte("not a patch\n"), 0o644); err != nil {
+	bad := filepath.Join(dir, "bad.patch")
+	if err := os.WriteFile(bad, []byte("not a patch\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := &model{root: dir, applyID: "demo", applyPath: patchPath}
+	if _, err := applyPatch(dir, bad); err == nil {
+		t.Fatal("a malformed patch must fail rather than silently no-op")
+	}
+}
+
+// The whole point of this change: a successful apply removes the loop. A failed
+// apply leaves it. The delete seam stands in for the audited CLI.
+func TestRunApplyDeletesLoopOnSuccess(t *testing.T) {
+	dir, patchPath, target := gitRepoWithPatch(t)
+	deleted := ""
+	m := &model{
+		root:       dir,
+		applyID:    "shipped-loop",
+		applyPath:  patchPath,
+		deleteLoop: func(root, id string) (string, error) { deleted = id; return "", nil },
+	}
 	m.runApply()
+
+	if got, _ := os.ReadFile(target); string(got) != "v2\n" {
+		t.Fatalf("apply did not run before delete: %q", got)
+	}
+	if deleted != "shipped-loop" {
+		t.Fatalf("a clean apply must remove the loop, deleted=%q", deleted)
+	}
+	if !strings.Contains(m.flash, "removed the loop") {
+		t.Fatalf("flash should report the removal: %q", m.flash)
+	}
+}
+
+func TestRunApplyKeepsLoopWhenApplyFails(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.patch")
+	if err := os.WriteFile(bad, []byte("not a patch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deleted := ""
+	m := &model{
+		root:       dir,
+		applyID:    "kept-loop",
+		applyPath:  bad,
+		deleteLoop: func(root, id string) (string, error) { deleted = id; return "", nil },
+	}
+	m.runApply()
+
+	if deleted != "" {
+		t.Fatalf("a failed apply must NOT remove the loop, deleted=%q", deleted)
+	}
 	if !strings.Contains(m.flash, "git apply failed") {
 		t.Fatalf("a failed apply should report it, got flash %q", m.flash)
+	}
+}
+
+// A delete that fails after a clean apply must not erase the fact that the diff
+// landed — the user still needs to commit it.
+func TestRunApplyReportsAppliedWhenDeleteFails(t *testing.T) {
+	dir, patchPath, _ := gitRepoWithPatch(t)
+	m := &model{
+		root:      dir,
+		applyID:   "half",
+		applyPath: patchPath,
+		deleteLoop: func(root, id string) (string, error) {
+			return "live engine holds it", os.ErrPermission
+		},
+	}
+	m.runApply()
+	if !strings.Contains(m.flash, "applied half") {
+		t.Fatalf("a clean apply must be reported even when delete fails: %q", m.flash)
 	}
 }

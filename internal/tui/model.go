@@ -80,6 +80,11 @@ type model struct {
 	// exitHint is printed by the watch command after the program exits —
 	// the deep link out of the monitor (o hands off the next command).
 	exitHint string
+
+	// deleteLoop is the seam tests use to observe the apply→delete coupling
+	// without shelling out. Nil in production: the real delete goes through the
+	// audited CLI (`loopy delete`), like every other monitor decision.
+	deleteLoop func(root, id string) (string, error)
 }
 
 func newModel(root, loopID string, color bool) model {
@@ -748,20 +753,48 @@ func (m *model) requestApply() {
 }
 
 // runApply applies the accepted loop's durable diff to the user's working
-// tree. This is loopy's only write to the checkout, and it is deliberately
-// the *weakest* one: git apply to the working tree, never a commit, push, or
-// merge (invariant 2). The patch applies atomically — a conflict leaves the
-// tree untouched and surfaces as a flash.
+// tree, then removes the loop — applying is shipping, so the loop's job is
+// done and it should leave the (already quiet) rail. The apply is loopy's only
+// write to the checkout and deliberately the *weakest* one: git apply, never a
+// commit, push, or merge (invariant 2). The delete runs ONLY after a clean
+// apply, so a conflict leaves both the tree and the loop untouched; the logbook
+// keeps a line either way. The diff is now in the working tree (and reaches git
+// history on commit), so the removed evidence is no longer the only copy.
 func (m *model) runApply() {
 	if m.applyPath == "" {
 		m.say("nothing to apply")
 		return
 	}
-	if out, err := runGit(m.root, "apply", m.applyPath); err != nil {
+	if out, err := applyPatch(m.root, m.applyPath); err != nil {
 		m.say("git apply failed (your tree is untouched): %s", firstLine(out, err))
 		return
 	}
-	m.say("applied %s to your working tree — review it, commit, and open your PR", m.applyID)
+	id := m.applyID
+	if out, err := m.deleteViaCLI(id); err != nil {
+		// The apply succeeded; only the cleanup didn't. Don't lose that.
+		m.say("applied %s — review and commit it; removing the loop failed: %s", id, firstLine(out, err))
+	} else {
+		m.say("applied %s and removed the loop — review, commit, and open your PR", id)
+	}
+	m.selectedID = ""
+	m.reload()
+}
+
+// applyPatch applies a patch to the working tree at root. Split out from
+// runApply so the git mechanics are unit-testable without the delete (which
+// shells out) that follows a clean apply.
+func applyPatch(root, path string) (string, error) {
+	return runGit(root, "apply", path)
+}
+
+// deleteViaCLI removes a loop through the audited CLI, the same path as the d
+// key — the monitor never writes loop state itself. Tests inject deleteLoop to
+// observe the call without spawning a process.
+func (m *model) deleteViaCLI(id string) (string, error) {
+	if m.deleteLoop != nil {
+		return m.deleteLoop(m.root, id)
+	}
+	return runCLI(m.root, "delete", id)
 }
 
 // firstLine flattens a child command's output (or its error) to one flash.

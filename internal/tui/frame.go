@@ -1185,7 +1185,7 @@ func quietStateLines(s frameState, width int) []cell {
 			joinCells(
 				plainCell("   "),
 				styled(s.color, sgrCyan, "A"),
-				plainCell(" applies it to your working tree · "),
+				plainCell(" applies it and removes the loop · "),
 				styled(s.color, sgrCyan, "c"),
 				plainCell(" copies the command"),
 			),
@@ -1317,7 +1317,7 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 		return joinCells(
 			plainCell(margin),
 			styled(s.color, sgrCyan, "→"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" git apply %s onto your working tree? loopy won't commit or push — y to confirm · n to cancel", s.applyID), width-len(margin)-1)),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" git apply %s, then remove the loop? loopy won't commit or push; the logbook keeps a line — y to confirm · n to cancel", s.applyID), width-len(margin)-1)),
 		)
 	case s.flash != "":
 		return joinCells(
