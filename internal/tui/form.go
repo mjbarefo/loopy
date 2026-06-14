@@ -50,25 +50,24 @@ type formState struct {
 	picked       map[int]bool // marked agents; more than one races
 
 	// Verifier: a hybrid of command gates and an ask stage. `verifier` is the
-	// editable command(s), prefilled from the project default or inference (it
-	// keeps its multi-stage form until edited). `ask` is the question the
-	// agent answers each iteration, defaulting to the goal; clearing it drops
-	// the ask stage, clearing `verifier` drops the gates. verifierField picks
-	// which of the two the keystrokes edit (0 gates, 1 ask).
+	// editable command(s). It starts blank — the default is to let the agent
+	// design a deterministic gate in the background once the loop starts
+	// (AutoGate) — unless a project default exists, which prefills it. `ask` is
+	// the question the agent answers each iteration, defaulting to the goal;
+	// clearing it drops the ask stage, clearing `verifier` drops the gates.
+	// verifierField picks which of the two the keystrokes edit (0 gates, 1 ask).
 	verifier      string
 	prefillStages []loop.Stage
-	stored        bool   // prefill is already the project default
-	inferSource   string // non-empty when the prefill was inferred
+	stored        bool // prefill is already the project default
 	edited        bool
 	ask           string // the ask-stage question; defaults to the goal
 	askEdited     bool
 	verifierField int // 0 command gates, 1 ask question
 
-	// Synthesis: arriving at the verifier step asks the selected agent to
-	// design a goal-testing command (async — the monitor keeps breathing);
-	// tab on the step asks again. The result lands in the editable field;
-	// enter stays the human's signature. Inference (the prefill above) is the
-	// fallback when the agent cannot propose one.
+	// Synthesis: tab on the verifier step asks the selected agent to design a
+	// goal-testing command up front (async — the monitor keeps breathing). The
+	// result lands in the editable field; enter stays the human's signature.
+	// Left blank, the engine designs the same gate in the background instead.
 	synthesizing bool
 	synthStarted time.Time
 	synthSeq     int    // stale results (after esc) are dropped by sequence
@@ -106,19 +105,19 @@ func openForm(root string) formState {
 		f.detected = loop.DetectAgentCLIs(root)
 	}
 
-	cfg, err := loop.LoadConfig(root)
-	if err == nil && len(cfg.DefaultVerifier) > 0 {
+	// The checks field starts blank: the default is the agent designing a gate
+	// in the background once the loop starts (AutoGate). Only an explicit
+	// project default prefills it — never inference, which would put a guessed
+	// command ahead of the agent's goal-specific one.
+	if cfg, err := loop.LoadConfig(root); err == nil && len(cfg.DefaultVerifier) > 0 {
 		f.prefillStages = cfg.DefaultVerifier
 		f.stored = true
-	} else if inferred, ok := loop.InferVerifier(root); ok {
-		f.prefillStages = inferred.Stages
-		f.inferSource = inferred.Source
+		parts := make([]string, len(f.prefillStages))
+		for i, s := range f.prefillStages {
+			parts[i] = s.Cmd
+		}
+		f.verifier = strings.Join(parts, " && ")
 	}
-	parts := make([]string, len(f.prefillStages))
-	for i, s := range f.prefillStages {
-		parts[i] = s.Cmd
-	}
-	f.verifier = strings.Join(parts, " && ")
 	return f
 }
 
@@ -185,21 +184,6 @@ func startLoops(root string, f formState) ([]string, error) {
 	wall, err := time.ParseDuration(strings.TrimSpace(f.wall))
 	if err != nil || wall <= 0 {
 		return nil, fmt.Errorf("wall clock must be a duration like 30m or 2h")
-	}
-
-	// Starting with an untouched inferred verifier is the confirmation that
-	// stores it as the project default — the CLI's confirm-once contract. Only
-	// the command gates are stored: the ask stage's question is goal-specific
-	// and must never become a default for future loops.
-	if f.inferSource != "" && !f.edited && len(f.prefillStages) > 0 {
-		cfg, err := loop.LoadConfig(root)
-		if err != nil {
-			return nil, err
-		}
-		cfg.DefaultVerifier = f.prefillStages
-		if err := loop.SaveConfig(root, cfg); err != nil {
-			return nil, err
-		}
 	}
 
 	var ids []string
@@ -359,8 +343,10 @@ func verifierLines(s frameState, width int) []cell {
 	}
 	// The ask question is the hero and is focused first: plain English the
 	// agent judges. The checks gate is the optional shell add-on below it —
-	// labelled so a description never lands in a shell by mistake.
-	checks := "optional shell gate — runs as a command, exit 0 passes; blank is fine"
+	// labelled so a description never lands in a shell by mistake. Left blank,
+	// the default, the agent designs the gate in the background once the loop
+	// starts — so the agent, not a guessed command, is the gate by default.
+	checks := "blank → " + agent + " designs a fast gate in the background once the loop starts"
 	switch {
 	case f.proposedBy != "" && f.verifier != "":
 		checks = "designed by " + f.proposedBy + " for this goal — a shell command, edit freely"
@@ -368,8 +354,8 @@ func verifierLines(s frameState, width int) []cell {
 		checks = "your shell command — runs as-is, exit 0 passes"
 	case f.stored:
 		checks = "the project default — a shell command, edit to override"
-	case f.inferSource != "":
-		checks = "inferred from " + f.inferSource + " — or tab asks " + agent + " for tighter gates"
+	case strings.TrimSpace(f.verifier) != "":
+		checks = "a shell command — runs as-is, exit 0 passes"
 	}
 	return []cell{
 		inputCell(s, "ask     ", f.ask, f.verifierField == 0, width),
@@ -380,7 +366,11 @@ func verifierLines(s frameState, width int) []cell {
 		{},
 		styled(s.color, sgrDim, "the agent judges; checks are an optional fast shell gate. ↑↓ switches."),
 		{},
-		affordance(s, "tab asks "+agent+" to design the checks · enter continues · esc goes back"),
+		// tab is the prominent path to an up-front, goal-specific gate — bold,
+		// not buried in the dim affordance line, since the agent designing the
+		// checks is the headline behavior here. enter/esc stay dim below.
+		styled(s.color, sgrBold, loop.TruncateDisplay("tab → have "+agent+" design the checks now", width)),
+		affordance(s, "enter continues · esc goes back"),
 	}
 }
 

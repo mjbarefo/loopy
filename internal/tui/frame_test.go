@@ -590,7 +590,7 @@ func TestFrameNewLoopWizard(t *testing.T) {
 		agents: []string{"claude", "codex"}, defaultAgent: "claude",
 		picked:        map[int]bool{},
 		prefillStages: []loop.Stage{{Name: "test", Cmd: "go test ./..."}},
-		verifier:      "go test ./...", inferSource: "go.mod",
+		verifier:      "go test ./...", stored: true,
 		iters: "8", wall: "30m",
 	}
 
@@ -624,7 +624,7 @@ func TestFrameNewLoopWizard(t *testing.T) {
 	for _, want := range []string{
 		"checks  go test ./...", "ask     is the importer fixed",
 		"claude judges this in plain English", "the agent judges", "↑↓ switches",
-		"tab asks claude to design the checks",
+		"tab → have claude design the checks now",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("hybrid verifier step missing %q\n%s", want, frame)
@@ -654,11 +654,15 @@ func TestFrameNewLoopWizard(t *testing.T) {
 		t.Error("a landed proposal should be attributed to its agent")
 	}
 
-	// No proposal yet: the gates are the inferred fallback, tab can tighten them.
+	// Blank checks is the default: the agent designs the gate in the background
+	// once the loop starts, and the field says so.
 	s.form = base
 	s.form.step = stepVerifier
-	if !strings.Contains(renderFrame(s), "inferred from go.mod") {
-		t.Error("an inferred verifier should name its source")
+	s.form.verifier = ""
+	s.form.prefillStages = nil
+	s.form.stored = false
+	if !strings.Contains(renderFrame(s), "designs a fast gate in the background") {
+		t.Error("a blank checks field should advertise background gate design")
 	}
 
 	// Step 4: budget, hard caps named.

@@ -922,11 +922,11 @@ func (m *model) startSynth(agent, goal string) tea.Cmd {
 }
 
 // enterVerifierStep advances to the verifier step and composes a hybrid
-// instantly: the command gates are already prefilled (openForm), and the ask
-// question defaults to the goal so the agent judges goal-completion each
-// iteration. No agent call here — the judgment moves inline to verify-time,
-// where the user already waits on the agent, instead of blocking loop creation
-// for minutes. tab on the step is the optional polish that designs the gates.
+// instantly: the ask question defaults to the goal so the agent judges
+// goal-completion each iteration, and the checks field is blank by default so
+// the engine designs a deterministic gate in the background once the loop runs
+// (AutoGate) — the agent, not a guessed command, is the gate. No agent call
+// here; loop creation never blocks. tab designs the gate up front instead.
 func (m *model) enterVerifierStep() tea.Cmd {
 	m.form.step = stepVerifier
 	if !m.form.askEdited {

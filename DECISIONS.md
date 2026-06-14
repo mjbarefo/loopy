@@ -844,6 +844,32 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   `applyPatch`, the delete behind a `deleteLoop` seam so the coupling is
   unit-tested without spawning the real CLI (which would re-run the test binary).
 
+- **2026-06-14 — The wizard's `checks` field defaults to blank: the agent
+  designs the gate in the background, not inference.** During the rc.1 soak the
+  owner's standing verdict resurfaced — the *agent* should design the check by
+  default, and the path to it should be visible. The instant-hybrid wizard
+  (2026-06-13 above) prefilled `checks` from `InferVerifier` (e.g. `make check`
+  off a Makefile), so a guessed command — not the agent — was the default gate,
+  and an untouched inferred verifier was silently stored as the project default.
+  The call: the wizard now leaves `checks` **blank** by default; `AutoGate`
+  (already set on every wizard loop) has the engine design a goal-specific gate
+  in the background once the loop starts and fold it in additively ahead of the
+  ask (the 2026-06-13 background-synthesis decision) — same agent-designed gate,
+  **zero up-front pause**, never the multi-minute block #31→#33 removed.
+  Inference is dropped from the wizard entirely (it still backs
+  `loopy init`/`loopy run`), and the now-unreachable "store the inferred
+  verifier as the project default" path is deleted; only an *explicit* project
+  default still prefills the field. `tab` (design the gate up front) is promoted
+  from a dim footer mention to its own bold line — agent-designed checks are the
+  headline behavior, so the affordance earns the prominence even though it makes
+  the cursor no longer the screen's only accent (a deliberate, owner-requested
+  loosening of the one-accent-per-screen rule). **Cost, accepted:** a wizard
+  loop with no project default and no typed check is ask-only until the
+  background gate lands, spending an agent judge call on early iterations — fine,
+  since the gate folds in ahead of the ask and short-circuits it once designed.
+  Supersedes the "checks prefilled from inference" half of the 2026-06-13
+  instant-hybrid decision; `loopy run`'s inference default is unchanged.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
