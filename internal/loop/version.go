@@ -9,10 +9,13 @@ import (
 // -ldflags "-X github.com/mjbarefo/loopy/internal/loop.Version=v0.x.y".
 var Version = ""
 
-// pseudoVersion matches Go's generated pseudo-versions
-// (v0.0.0-20260611203006-fb77aa536254[+dirty]) — building from a local git
-// checkout stamps one, and "dev-<sha>" reads better for that case.
-var pseudoVersion = regexp.MustCompile(`-\d{14}-[0-9a-f]{12}`)
+// pseudoVersion matches Go's generated pseudo-versions so we fall through to
+// the friendlier "dev-<sha>". All three forms end in a 14-digit UTC timestamp
+// then a 12-char commit prefix; only the separator before the timestamp
+// varies with the base tag: none (v0.0.0-<ts>-<sha>), a release base
+// (v0.1.2-0.<ts>-<sha>), or a prerelease base (v0.1.0-rc.1.0.<ts>-<sha>) —
+// so the timestamp is preceded by either '-' or '.'. Real tags never match.
+var pseudoVersion = regexp.MustCompile(`[.-]\d{14}-[0-9a-f]{12}`)
 
 // ResolvedVersion prefers the ldflags version, then the real module version
 // that `go install …@vX.Y.Z` stamps, then VCS build info, then dev.
