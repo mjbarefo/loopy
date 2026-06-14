@@ -85,6 +85,39 @@ loopy run "fix the flaky importer test" \
   --forbidden-path vendor/
 ```
 
+### The verifier spectrum
+
+A verifier is an ordered list of stages; they short-circuit on the first
+failure, cheapest first. A stage can be a shell **command** or a
+plain-English **ask** question:
+
+| | Command stage | Ask stage |
+|---|---|---|
+| Verdict from | `sh -c cmd`, exit 0 = pass | the loop's agent answers a yes/no question |
+| Cost | free, no API key | one agent call |
+| Good at | anything mechanical: builds, tests, file checks, lint | quality and intent: "is the prose accurate?", "does this API read cleanly?" |
+
+A **hybrid** is the default the wizard builds: inferred command gates first,
+then an ask question derived from your goal (no pause, composed instantly).
+The ask stage only runs after the command gates are green, so you never
+spend an agent call on a build that doesn't compile.
+
+In the monitor wizard, `checks` is the optional shell gate and the **ask
+question is the hero field** (defaults to your goal). Press `↑`/`↓` to
+switch between them; either can be cleared for an ask-only or command-only
+verifier; `tab` asks the agent to propose tighter command gates as optional
+polish.
+
+For an **ask-only loop** (goal-as-question, no shell gate), the engine
+designs a deterministic command gate in the background while the loop
+iterates immediately under your ask verifier. When the proposal lands it
+folds in ahead of the ask stage — cheap check first, ask only when green —
+with no creation-time pause and no re-sign-off from you. A failed or
+already-passing proposal is a silent no-op.
+
+An ask stage's `FAIL: <reason>` becomes the next iteration's feedback,
+exactly like a failing command's output.
+
 Rules that protect you, always on:
 
 - **No verifier, no loop.** Creation refuses an empty verifier.
@@ -105,10 +138,36 @@ on the right. The default **overview** shows the iteration timeline (with
 how far through the verifier each iteration got), what the engine is doing
 right now, and the last feedback the agent saw. `tab`/`1-4` switch to
 **live** (the full output tail), **diff**, and **verifier**. `enter` drills
-in to scroll, `p` pauses at the next iteration boundary, `r` resumes, `a`
-aborts (with confirmation), `q` quits. The footer always shows the exact
-next command. For scripts and CI: `loopy watch --once` prints one plain
-frame; `loopy status --json` is the machine-readable view.
+in to scroll. The footer always shows the exact next command.
+
+Keys are contextual — what a key does depends on the loop's state:
+
+| Key | Moving loop | Paused loop | Green loop | Parked loop |
+|---|---|---|---|---|
+| `p` | pause at next boundary | — | — | — |
+| `r` | — | resume | reject (confirms) | reject (confirms) |
+| `a` | abort (confirms) | — | accept (confirms) | — |
+| `d` | — | delete (confirms) | delete (confirms) | delete (confirms) |
+| `q` | quit | quit | quit | quit |
+
+A focused green loop's footer advertises `a accept · r reject` so the
+actions are visible at the moment you reach for them. A parked loop shows
+`r reject`.
+
+Additional keys: **`A`** applies the most recently *accepted* loop's diff to
+your working tree and removes that loop (confirms) — the follow-up to `a`
+(see §5), so accept first, then `A`; `c` copies the next command to the
+clipboard via OSC 52 (hold Option/Shift to select text normally while mouse
+capture is on); `o` quits and prints the next command; `?` shows the full
+key reference.
+
+**Mouse:** the wheel scrolls whichever pane is under the pointer (the detail
+body by lines, the loop rail by selection); clicking a rail row selects that
+loop; clicking a view name in the nav switches to it. Pending confirmations
+ignore clicks.
+
+For scripts and CI: `loopy watch --once` prints one plain frame;
+`loopy status --json` is the machine-readable view.
 
 ## 5. Judge the result
 
@@ -132,6 +191,12 @@ the apply command — shipping stays your move:
 ```bash
 git apply .loopy/loops/<loop-id>/final-diff.patch
 ```
+
+You can also do this without leaving the monitor: press `a` on a green loop
+to accept it, then `A` to apply its diff to your working tree and clear it
+from the rail. `A` runs `git apply` only — never a commit, push, or merge
+— so the patch lands as an uncommitted change you review and ship. A patch
+that doesn't fit leaves your tree and the loop untouched.
 
 Every decision lands in the project's memory:
 

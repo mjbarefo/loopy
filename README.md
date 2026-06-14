@@ -76,8 +76,12 @@ zero API keys.
 ```
 
 - **No verifier, no loop.** A loop cannot be created without at least one
-  verifier command. The verifier is the loop's definition of done *and* its
-  feedback signal: the failing stage's output tail is what the agent sees next.
+  verifier stage. A stage can be a shell command (exit 0 = pass, exact and
+  free) or an **ask** stage (a registered agent answers a yes/no question about
+  the worktree — `PASS` / `FAIL: <reason>` — for goals no shell command can
+  check). A hybrid is the ordered mix: cheap deterministic command gates first,
+  an ask stage last, so the agent call only runs once the mechanical gates are
+  green. The failing stage's output or reason becomes the agent's next feedback.
 - **Budgets are hard caps** — max iterations and max wall clock. Exhaustion
   parks the loop; nothing is advisory.
 - **Stuck detection** parks early instead of burning budget: the same failure
@@ -125,10 +129,21 @@ most urgent first; the overview answers the live questions at a glance —
 the iteration timeline with verifier stage progression, what the engine is
 doing right now (agent or verify, and for how long), the last feedback the
 agent saw, and why a stopped loop stopped. Tabs switch to the full live
-tail, the cumulative diff, and the verifier log (tail-first, 256 KiB cap,
-truncation always labeled). It takes only the safe, reversible actions —
-pause, resume, abort (with confirmation) — and always shows the exact next
-command in the footer. Accept and reject stay in the CLI.
+tail, the cumulative diff, and the verifier log; the diff and verifier tabs
+open with a plain-words summary (stat header, per-stage scoreboard, verdict
+sentence) before the raw artifact, so the answer leads the evidence. Long
+log, diff, and verifier lines wrap instead of being cut off. Mouse support:
+the wheel scrolls the pane under the pointer, clicking a rail row selects
+it, clicking a tab name switches to it; decisions stay on the keyboard.
+`c` copies the next command (or the accepted loop's `git apply` line on a
+quiet rail) to the clipboard via OSC 52. Contextual keyboard actions follow
+the loop's state: `a` aborts a running loop and accepts a parked green one
+(y/n confirm); `r` resumes a paused loop and rejects a parked one (y/n
+confirm) — each shells out to the audited CLI. `A` applies an accepted
+loop's durable diff to your working tree and then removes the loop — `git
+apply` to the working tree only, never a commit, push, or merge (invariant
+2); a patch conflict leaves both your tree and the loop untouched. Deciding
+a non-green loop stays CLI-only (`loopy accept --override --reason`).
 
 Judge:
 
@@ -156,13 +171,29 @@ What works today:
   `status`, `log` (all with `--json`), `pause` / `resume` / `abort`, `doctor`,
   crash resumability, verifier inference.
 - **The monitor**: `loopy watch` (Bubble Tea v2) — loop list, live tailing,
-  iteration timeline, diff/verifier viewers, pause/resume/abort from the
-  keyboard, `--once` for scripts, PTY smoke tests in CI.
+  iteration timeline, diff/verifier viewers, pause/resume/abort/accept/reject
+  from the keyboard, mouse support (wheel + click), `c` copies next command
+  via OSC 52, `A` applies an accepted loop's diff to your working tree and
+  removes the loop, `--once` for scripts, PTY smoke tests in CI.
 - **The judgment**: `loopy review` (final diff + verifier transcript +
   history), `accept`/`reject` with `--override --reason` recorded verbatim,
   durable `final-diff.patch` and `review.json`, and the `logbook` — the
   project's memory of every decision. The logbook implementation was itself
   built by a loopy loop (see `DECISIONS.md`).
+- **The reviewer agent**: `loopy run --reviewer <name>` runs a *different*
+  registered agent against the green diff before parking; its critique is
+  recorded as `critique.md` and shown by `loopy review` — evidence, never a
+  gate.
+- **The verifier spectrum**: verifier stages can be a shell command (`exit 0`
+  = pass) or an **ask** stage (the loop asks a registered agent a yes/no
+  question about the worktree; `PASS`/`FAIL: <reason>`). The wizard composes a
+  hybrid instantly — inferred command gates first, the goal as the ask question
+  — so loop creation is instant. For an ask-only loop the engine designs a
+  deterministic gate in the background and folds it in additively once it
+  arrives, without re-sign-off.
+- **`loopy run --json` / `loopy resume --json`**: NDJSON event stream for
+  scripts and outer orchestrators; `--race` interleaves all loops and ends with
+  a `verdict` event. Schema in `docs/orchestration.md`.
 - **Race mode and the judge**: `loopy run "<goal>" --race claude,codex` runs
   one loop per agent in parallel worktrees; the deterministic judge ranks
   the parked evidence (smallest clean green diff wins), flags
@@ -177,15 +208,15 @@ What works today:
 - The demo: `scripts/demo.sh`, no API keys, now running the full cycle
   through accept and the logbook.
 
-What doesn't exist yet (in design order — see `DESIGN.md`):
-- Post-v0 features: reviewer agents, scheduled loops, cost budgets,
-  notification hooks.
-- Gemini CLI in the [tested agent matrix](docs/agents.md) — its invocation
-  is still a suggestion; Claude Code and Codex are exercised through real
-  loops.
+What doesn't exist yet:
+- Scheduled loops, cost budgets, notification hooks.
 - Windows is build-verified only: archives are produced and CI
   cross-compiles them, but the engine shells out to `sh` (Git Bash works)
   and nobody runs the test suite there yet.
+
+Claude Code, Codex, and Gemini CLI are all exercised through real loops —
+the [tested agent matrix](docs/agents.md) has the exact invocations (Gemini
+needs `--skip-trust` to work headless).
 
 ## Lineage
 
@@ -196,4 +227,5 @@ human-gated at every joint; loopy is autonomous between two human moments,
 loop design and final review.
 
 `DESIGN.md` holds the full design; `DECISIONS.md` logs every deviation from it
-and every call the design left open.
+and every call the design left open; `DEV.md` is the contributor guide (build,
+test, extend).
