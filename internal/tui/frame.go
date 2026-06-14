@@ -1199,6 +1199,22 @@ func helpLines(s frameState) []cell {
 const listHints = "n new · enter open · ? keys"
 const detailHints = "esc back · ? keys"
 
+// detailHintsFor leads with the actions that apply to the focused loop. A
+// green loop's accept/reject keys are otherwise invisible — the footer was the
+// only place a reviewer could discover them — so they take the front of the
+// chain whenever they're live (accept on green; reject on green or parked).
+func detailHintsFor(sel *loop.LoopView) string {
+	if sel != nil {
+		switch sel.Status {
+		case loop.StatusGreen:
+			return "a accept · r reject · esc back · ? keys"
+		case loop.StatusParked:
+			return "r reject · esc back · ? keys"
+		}
+	}
+	return detailHints
+}
+
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	margin := " "
 	if s.roomy() {
@@ -1251,7 +1267,7 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 
 	hints := listHints
 	if s.focusDetail {
-		hints = detailHints
+		hints = detailHintsFor(sel)
 	}
 	if next == "" {
 		return styled(s.color, sgrDim, margin+hints)

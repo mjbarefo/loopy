@@ -38,6 +38,11 @@ Homebrew tap.
 
 ### Changed
 
+- Monitor: a focused **green** loop now advertises its review actions in the
+  footer — `a accept · r reject` — instead of hiding them behind `?`. The keys
+  always worked; they were just invisible at the one moment you reach for them.
+  A parked loop surfaces `r reject` (accepting a red loop stays a deliberate
+  CLI override). The next-command handoff keeps its place on the right.
 - Monitor: the loop detail header is restructured for calm and hierarchy. The
   loop id leads (with its status glyph), a single label-free meta line carries
   `status · agent · iter · wall`, and the goal stands on its own as the hero
