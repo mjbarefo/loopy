@@ -208,6 +208,10 @@ func startLoops(root string, f formState) ([]string, error) {
 			Goal:     goal,
 			Agent:    agent,
 			Verifier: stages,
+			// On an ask-only verifier, let the engine design a deterministic
+			// command gate in the background and fold it in — the instant
+			// hybrid keeps running meanwhile. No-op when the user wrote a gate.
+			AutoGate: true,
 			Budget: loop.Budget{
 				MaxIterations: iters,
 				MaxWallClock:  loop.Duration(wall),

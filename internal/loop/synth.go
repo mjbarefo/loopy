@@ -34,7 +34,12 @@ type SynthesisResult struct {
 // even scribble) without touching the user's checkout. loopy itself still
 // makes no model calls (invariant 4): the agent is the same registered
 // external command that runs the loop.
-func SynthesizeVerifier(root, agentName, goal string) (SynthesisResult, error) {
+//
+// ctx cancels both the agent run and the trial run and tears the throwaway
+// worktree down — the engine's background gate synthesis passes a context it
+// cancels when the loop parks before synthesis finishes. SynthesisTimeout
+// still bounds each run independently of ctx.
+func SynthesizeVerifier(ctx context.Context, root, agentName, goal string) (SynthesisResult, error) {
 	name, agent, err := ResolveAgent(root, agentName)
 	if err != nil {
 		return SynthesisResult{}, err
@@ -69,13 +74,13 @@ func SynthesizeVerifier(root, agentName, goal string) (SynthesisResult, error) {
 	if err != nil {
 		return res, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), SynthesisTimeout)
+	runCtx, cancel := context.WithTimeout(ctx, SynthesisTimeout)
 	defer cancel()
 	start := time.Now()
-	_, exit, runErr := runShell(ctx, dir, command, logFile)
+	_, exit, runErr := runShell(runCtx, dir, command, logFile)
 	_ = logFile.Close()
 	res.AgentMS = time.Since(start).Milliseconds()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		return res, fmt.Errorf("agent %s timed out after %s proposing a verifier", name, SynthesisTimeout)
 	}
 	if runErr != nil {
@@ -96,7 +101,7 @@ func SynthesizeVerifier(root, agentName, goal string) (SynthesisResult, error) {
 
 	// Trial-run the proposal where the agent wrote it. Red is the desired
 	// answer: the goal is not done yet, so the loop has work to do.
-	trialCtx, trialCancel := context.WithTimeout(context.Background(), SynthesisTimeout)
+	trialCtx, trialCancel := context.WithTimeout(ctx, SynthesisTimeout)
 	defer trialCancel()
 	_, trialExit, trialErr := runShell(trialCtx, dir, res.Cmd, io.Discard)
 	if trialErr != nil {
