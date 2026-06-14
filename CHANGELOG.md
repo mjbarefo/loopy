@@ -8,8 +8,34 @@ Homebrew tap.
 
 ## [Unreleased]
 
+## [v0.1.0] - unreleased
+
+The first release: the complete loop engine and review workflow.
+
 ### Added
 
+- **The loop engine**: goal + verifier + budget → an agent iterates in an
+  isolated git worktree until green or the budget runs out. Baseline verify,
+  feedback-driven prompt composition, hard iteration/wall-clock budgets,
+  stuck detection (identical failures, no-change iterations), forbidden-path
+  enforcement every iteration, crash resumability, pause/resume/abort.
+- **The monitor** (`loopy watch`): urgency-sorted loop rail, overview with
+  the iteration timeline and verifier stage progression, a live activity
+  line (agent/verify phase with elapsed time), full live tail, diff and
+  verifier viewers with capped tail-first loading, safe controls
+  (pause/resume/abort), `--once` deterministic frames for scripts.
+- **The judgment**: `loopy review` (final diff + verifier transcript +
+  history), audited `accept`/`reject` (`--override --reason` recorded
+  verbatim), durable `final-diff.patch`, the logbook.
+- **Race mode**: `--race a,b` runs one loop per agent in parallel worktrees;
+  the deterministic judge ranks parked evidence; "no safe winner" is a
+  legitimate verdict. `loopy judge` re-ranks any finished loops.
+- **Operability**: `init` with verifier inference and agent detection,
+  `doctor` with repair guidance, `--json` everywhere it makes sense,
+  `NO_COLOR` support, exit-code contract (0 success / 1 runtime / 2 usage;
+  `loopy run` exits 0 only when the loop parks green).
+- **Zero-key demo**: `scripts/demo.sh` runs the whole arc with a scripted
+  shell agent — no API keys anywhere.
 - Monitor: **`A` applies an accepted loop's diff to your working tree, then
   removes the loop.** After you accept a green loop, its diff was durable but
   you had to copy or retype `git apply <…/final-diff.patch>` yourself; now `A`
@@ -43,55 +69,8 @@ Homebrew tap.
   the same as a failing command's output. It fails closed (a timeout, an
   unrunnable agent, or a missing verdict all read as `FAIL`) and never makes
   a model call of loopy's own — it runs your registered agent, so the
-  no-API-key demo and inference stay command-only. (Engine support;
-  wizard/monitor surfacing to follow. Design: `docs/verifier-spectrum.md`.)
-
-### Changed
-
-- Monitor: long log, diff, and verifier lines now **wrap** instead of being
-  cut off at the right edge. A wrapped line preserves its exact columns — the
-  leading indent and the `+`/`-` gutter survive, and each row keeps the line's
-  color — so a long verifier command or a wide diff stays readable. A
-  pathological line (a minified bundle, a base64 blob) is capped after a few
-  rows with a trailing …; the raw artifact on disk still has every byte.
-- Monitor: a focused **green** loop now advertises its review actions in the
-  footer — `a accept · r reject` — instead of hiding them behind `?`. The keys
-  always worked; they were just invisible at the one moment you reach for them.
-  A parked loop surfaces `r reject` (accepting a red loop stays a deliberate
-  CLI override). The next-command handoff keeps its place on the right.
-- Monitor: the loop detail header is restructured for calm and hierarchy. The
-  loop id leads (with its status glyph), a single label-free meta line carries
-  `status · agent · iter · wall`, and the goal stands on its own as the hero
-  with room to breathe — no more `goal`/`agent` labels crowding the top. The
-  activity/park-reason sits below the goal. (Color stays disciplined: the
-  glyph carries the state, the words stay plain.)
-- Monitor wizard: the verifier step is now a **hybrid, composed instantly** —
-  no more multi-minute pause on loop creation. The **ask question is the hero**
-  (plain English the agent judges, defaulting to your goal); `checks` is an
-  optional, clearly-labelled shell gate below it, so a description never lands
-  in a shell by mistake. ↑↓ switches; either can be cleared for an ask-only or
-  command-only verifier; enter is your sign-off. The agent's judgment now
-  happens inline at verify-time instead of blocking the wizard up front. `tab`
-  is the optional polish: it asks the agent to design tighter command gates.
-  (Replaces the always-on up-front synthesis; the `loopy run` CLI is unchanged.)
-- Monitor verifier tab: a cleaner per-stage scoreboard — bold stage names,
-  ask stages rendered as `asks <agent>: "<question>"`, and the verdict word
-  colored (green/red/yellow) with the explanation plain. A command stage that
-  exits 127 (the classic "I typed a description, not a command" mistake) now
-  gets a verdict that points at the fix — clear the check to let the agent
-  judge, or write real shell — instead of a generic failure.
-- Monitor: a loop that parks green at baseline (the verifier passed before
-  the agent ever ran) no longer looks like a win. It gets the yellow `!` in
-  the rail and title, its own header count ("already green — check the
-  verifier") instead of joining "green to review", and the verifier tab's
-  verdict says plainly that the verifier may not test the goal.
-- Monitor: the goal (up to three lines) and the activity line (up to two)
-  wrap under hanging indents instead of truncating to one line, so long
-  goals and park reasons stay readable. The welcome splash names the mouse
-  bindings so they can be discovered.
-
-### Added
-
+  no-API-key demo and inference stay command-only. (Design:
+  `docs/verifier-spectrum.md`.)
 - Monitor: mouse support. The wheel scrolls the pane under the pointer —
   the detail body by lines, the loop rail by selection; clicking a rail row
   selects that loop, clicking a view name in the nav switches to it.
@@ -108,7 +87,6 @@ Homebrew tap.
   output dims so the failure reads. Both tabs open at the top; `G` still
   jumps to the tail. Readable without color: glyphs and words carry every
   verdict.
-
 - The reviewer agent: `loopy run --reviewer <name>` runs a *different*
   registered agent against the green diff before parking; its critique is
   recorded as `critique.md` and shown by `loopy review` — evidence, never a
@@ -154,6 +132,50 @@ Homebrew tap.
   dead auth, missing CLI) and its fix. Exit 0 with no change remains "stuck";
   a nonzero exit with real changes is still judged by the verifier alone.
 
+### Changed
+
+- Monitor: long log, diff, and verifier lines now **wrap** instead of being
+  cut off at the right edge. A wrapped line preserves its exact columns — the
+  leading indent and the `+`/`-` gutter survive, and each row keeps the line's
+  color — so a long verifier command or a wide diff stays readable. A
+  pathological line (a minified bundle, a base64 blob) is capped after a few
+  rows with a trailing …; the raw artifact on disk still has every byte.
+- Monitor: a focused **green** loop now advertises its review actions in the
+  footer — `a accept · r reject` — instead of hiding them behind `?`. The keys
+  always worked; they were just invisible at the one moment you reach for them.
+  A parked loop surfaces `r reject` (accepting a red loop stays a deliberate
+  CLI override). The next-command handoff keeps its place on the right.
+- Monitor: the loop detail header is restructured for calm and hierarchy. The
+  loop id leads (with its status glyph), a single label-free meta line carries
+  `status · agent · iter · wall`, and the goal stands on its own as the hero
+  with room to breathe — no more `goal`/`agent` labels crowding the top. The
+  activity/park-reason sits below the goal. (Color stays disciplined: the
+  glyph carries the state, the words stay plain.)
+- Monitor wizard: the verifier step is now a **hybrid, composed instantly** —
+  no more multi-minute pause on loop creation. The **ask question is the hero**
+  (plain English the agent judges, defaulting to your goal); `checks` is an
+  optional, clearly-labelled shell gate below it, so a description never lands
+  in a shell by mistake. ↑↓ switches; either can be cleared for an ask-only or
+  command-only verifier; enter is your sign-off. The agent's judgment now
+  happens inline at verify-time instead of blocking the wizard up front. `tab`
+  is the optional polish: it asks the agent to design tighter command gates.
+  (Replaces the always-on up-front synthesis; the `loopy run` CLI is unchanged.)
+- Monitor verifier tab: a cleaner per-stage scoreboard — bold stage names,
+  ask stages rendered as `asks <agent>: "<question>"`, and the verdict word
+  colored (green/red/yellow) with the explanation plain. A command stage that
+  exits 127 (the classic "I typed a description, not a command" mistake) now
+  gets a verdict that points at the fix — clear the check to let the agent
+  judge, or write real shell — instead of a generic failure.
+- Monitor: a loop that parks green at baseline (the verifier passed before
+  the agent ever ran) no longer looks like a win. It gets the yellow `!` in
+  the rail and title, its own header count ("already green — check the
+  verifier") instead of joining "green to review", and the verifier tab's
+  verdict says plainly that the verifier may not test the goal.
+- Monitor: the goal (up to three lines) and the activity line (up to two)
+  wrap under hanging indents instead of truncating to one line, so long
+  goals and park reasons stay readable. The welcome splash names the mouse
+  bindings so they can be discovered.
+
 ### Fixed
 
 - Monitor: deciding the last undecided loop no longer leaves it pinned in
@@ -161,35 +183,6 @@ Homebrew tap.
   is decided") and keeps the newest accepted loop's `git apply` command on
   screen — the bridge from an accepted diff to a branch and a PR.
   (`loopy watch <id>` still pins a decided loop explicitly.)
-
-## [v0.1.0] - unreleased
-
-The first release: the complete loop engine and review workflow.
-
-### Added
-
-- **The loop engine**: goal + verifier + budget → an agent iterates in an
-  isolated git worktree until green or the budget runs out. Baseline verify,
-  feedback-driven prompt composition, hard iteration/wall-clock budgets,
-  stuck detection (identical failures, no-change iterations), forbidden-path
-  enforcement every iteration, crash resumability, pause/resume/abort.
-- **The monitor** (`loopy watch`): urgency-sorted loop rail, overview with
-  the iteration timeline and verifier stage progression, a live activity
-  line (agent/verify phase with elapsed time), full live tail, diff and
-  verifier viewers with capped tail-first loading, safe controls
-  (pause/resume/abort), `--once` deterministic frames for scripts.
-- **The judgment**: `loopy review` (final diff + verifier transcript +
-  history), audited `accept`/`reject` (`--override --reason` recorded
-  verbatim), durable `final-diff.patch`, the logbook.
-- **Race mode**: `--race a,b` runs one loop per agent in parallel worktrees;
-  the deterministic judge ranks parked evidence; "no safe winner" is a
-  legitimate verdict. `loopy judge` re-ranks any finished loops.
-- **Operability**: `init` with verifier inference and agent detection,
-  `doctor` with repair guidance, `--json` everywhere it makes sense,
-  `NO_COLOR` support, exit-code contract (0 success / 1 runtime / 2 usage;
-  `loopy run` exits 0 only when the loop parks green).
-- **Zero-key demo**: `scripts/demo.sh` runs the whole arc with a scripted
-  shell agent — no API keys anywhere.
 
 [Unreleased]: https://github.com/mjbarefo/loopy/compare/v0.1.0...HEAD
 [v0.1.0]: https://github.com/mjbarefo/loopy/releases/tag/v0.1.0
