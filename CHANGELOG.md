@@ -46,6 +46,12 @@ Homebrew tap.
 
 ### Changed
 
+- Monitor: long log, diff, and verifier lines now **wrap** instead of being
+  cut off at the right edge. A wrapped line preserves its exact columns — the
+  leading indent and the `+`/`-` gutter survive, and each row keeps the line's
+  color — so a long verifier command or a wide diff stays readable. A
+  pathological line (a minified bundle, a base64 blob) is capped after a few
+  rows with a trailing …; the raw artifact on disk still has every byte.
 - Monitor: a focused **green** loop now advertises its review actions in the
   footer — `a accept · r reject` — instead of hiding them behind `?`. The keys
   always worked; they were just invisible at the one moment you reach for them.

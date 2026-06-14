@@ -1,6 +1,9 @@
 package loop
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The monitor and the plain renderers truncate and pad text by terminal
 // columns, not runes or bytes: CJK and emoji occupy two columns, combining
@@ -121,6 +124,41 @@ func TestWrapDisplay(t *testing.T) {
 			if got[i] != c.want[i] {
 				t.Errorf("WrapDisplay(%q, %d)[%d] = %q, want %q", c.in, c.width, i, got[i], c.want[i])
 			}
+		}
+	}
+}
+
+func TestHardWrapDisplay(t *testing.T) {
+	cases := []struct {
+		in    string
+		width int
+		want  []string
+	}{
+		// Whitespace and alignment are preserved (a diff/log line, not prose).
+		{"+    foo(bar, baz)", 8, []string{"+    foo", "(bar, ba", "z)"}},
+		{"short", 20, []string{"short"}},
+		{"", 10, []string{""}},
+		{"exact", 5, []string{"exact"}},
+		// CJK runes count two columns and never split mid-rune.
+		{"引用符付き", 4, []string{"引用", "符付", "き"}},
+		// A rune wider than the whole line still gets its own segment.
+		{"a引b", 1, []string{"a", "引", "b"}},
+		{"anything", 0, []string{"anything"}},
+	}
+	for _, c := range cases {
+		got := HardWrapDisplay(c.in, c.width)
+		if len(got) != len(c.want) {
+			t.Errorf("HardWrapDisplay(%q, %d) = %q, want %q", c.in, c.width, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("HardWrapDisplay(%q, %d)[%d] = %q, want %q", c.in, c.width, i, got[i], c.want[i])
+			}
+		}
+		// The segments must reproduce the input exactly.
+		if join := strings.Join(got, ""); join != c.in {
+			t.Errorf("HardWrapDisplay(%q, %d) segments lose content: %q", c.in, c.width, join)
 		}
 	}
 }

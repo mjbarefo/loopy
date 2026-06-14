@@ -96,6 +96,35 @@ func PadDisplay(s string, width int) string {
 	return s
 }
 
+// HardWrapDisplay splits s into segments of at most width display columns,
+// breaking between runes and preserving every character — whitespace and
+// alignment included. Unlike WrapDisplay (which word-wraps and collapses
+// whitespace, right for prose), this is for monospaced log and diff lines
+// where a leading indent or a `+`/`-` column carries meaning. Concatenating
+// the segments reproduces s exactly. Always returns at least one segment.
+func HardWrapDisplay(s string, width int) []string {
+	if width <= 0 || DisplayWidth(s) <= width {
+		return []string{s}
+	}
+	var segs []string
+	var cur strings.Builder
+	curW := 0
+	for _, r := range s {
+		rw := runeDisplayWidth(r)
+		// Break before a rune that would overflow, but never emit an empty
+		// segment — a single rune wider than width takes a segment of its own.
+		if curW+rw > width && curW > 0 {
+			segs = append(segs, cur.String())
+			cur.Reset()
+			curW = 0
+		}
+		cur.WriteRune(r)
+		curW += rw
+	}
+	segs = append(segs, cur.String())
+	return segs
+}
+
 // WrapDisplay greedily word-wraps s into lines of at most width display
 // columns (CJK and emoji count two). Internal whitespace collapses to single
 // spaces; a word wider than a line gets a line of its own (renderers truncate

@@ -894,6 +894,51 @@ func TestDetailFooterAdvertisesAcceptReject(t *testing.T) {
 	}
 }
 
+// TestWrapBodyLine: short lines are returned unchanged (byte-identical to the
+// old truncating path); long lines wrap preserving content; a pathological line
+// is capped with a trailing ellipsis.
+func TestWrapBodyLine(t *testing.T) {
+	if got := wrapBodyLine("short line", 40); len(got) != 1 || got[0] != " short line" {
+		t.Fatalf("a fitting line should be one unchanged row, got %q", got)
+	}
+	// Tabs expand, then wrap. cw = width-1 = 10.
+	got := wrapBodyLine(strings.Repeat("x", 40), 11)
+	if len(got) != 4 { // 40 cols / 10 = 4 rows, exactly the cap
+		t.Fatalf("expected 4 wrapped rows, got %d: %q", len(got), got)
+	}
+	var joined string
+	for _, r := range got {
+		joined += strings.TrimPrefix(r, " ")
+	}
+	if joined != strings.Repeat("x", 40) {
+		t.Fatalf("wrapping lost content: %q", joined)
+	}
+	// Past the cap, the last row ends in … and the rest is dropped.
+	capped := wrapBodyLine(strings.Repeat("y", 200), 11)
+	if len(capped) != bodyWrapRows {
+		t.Fatalf("a pathological line must cap at %d rows, got %d", bodyWrapRows, len(capped))
+	}
+	if !strings.HasSuffix(capped[len(capped)-1], "…") {
+		t.Errorf("the capped last row should mark the cut with …: %q", capped[len(capped)-1])
+	}
+}
+
+// TestFrameWrapsLongBodyLine: a long diff line wraps so its tail stays on
+// screen instead of being truncated, and the frame keeps exact geometry.
+func TestFrameWrapsLongBodyLine(t *testing.T) {
+	tail := "END_OF_THE_VERY_LONG_LINE"
+	long := "+" + strings.Repeat("abcdefghij ", 18) + tail // ~220 cols
+	s := wideState()
+	s.tab = tabDiff
+	s.scroll = 0
+	s.art = artifact{label: "iter 1 · diff.patch", iter: 1, lines: []string{long}}
+	frame := renderFrame(s)
+	checkFrameGeometry(t, frame, 120, 36)
+	if !strings.Contains(frame, tail) {
+		t.Errorf("a long diff line should wrap so its tail survives, not truncate:\n%s", frame)
+	}
+}
+
 // TestFrameBaselineGreenHonesty: green after zero iterations means the agent
 // never ran — the monitor says so everywhere instead of celebrating: the
 // header bucket, the rail glyph, the title phrase, and the activity line.
