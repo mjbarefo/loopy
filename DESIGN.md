@@ -357,7 +357,10 @@ pinned v1 for stability mid-project; a greenfield repo is the right moment to ta
 ## Safety model
 
 - A loop cannot exist without a verifier; high-stakes defaults fail closed.
-- Worktree isolation for every loop; refuse to start from a dirty repository.
+- Worktree isolation for every loop; refuse to start from a dirty repository
+  by default (opt in with `--stash`, offered by the monitor, which sets the
+  changes aside and never pops them back — the user restores with `git stash
+  pop`).
 - Budgets are hard caps; every override (`--override --reason`) is recorded verbatim.
 - Forbidden-path and dependency-manifest changes are checked **every iteration**, not
   just at the end — a violation fails the iteration and is fed back to the agent.

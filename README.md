@@ -87,7 +87,9 @@ zero API keys.
 - **Stuck detection** parks early instead of burning budget: the same failure
   N times in a row, or iterations that change nothing.
 - **Worktree isolation.** Each loop runs on its own branch in its own
-  worktree. Your checkout is never touched; dirty repos are refused.
+  worktree. Your checkout is never touched; dirty repos are refused by default
+  (`--stash`, which the monitor offers, sets your changes aside first —
+  restore them whenever with `git stash pop`).
 - **Everything on disk is inspectable without loopy** — plain JSON, markdown
   prompts, patches. `cat` is a fully supported interface.
 

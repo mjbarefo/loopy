@@ -870,6 +870,27 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   Supersedes the "checks prefilled from inference" half of the 2026-06-13
   instant-hybrid decision; `loopy run`'s inference default is unchanged.
 
+- **2026-06-14 — The dirty-repo refusal stays the default, but loopy offers to
+  stash instead of dead-ending.** Starting a loop with uncommitted changes to
+  tracked files hit a hard refusal with no way forward but a manual
+  `git stash`. Rather than relax the refusal (it's a documented design property
+  — DESIGN/README/QUICKSTART — and the loop branches from HEAD, so a dirty tree
+  also means the loop won't include that WIP, which the refusal usefully
+  surfaces), make setting the changes aside a first-class action: the monitor's
+  confirm screen turns into a y/n "stash them and start?" offer when the tree
+  is dirty, and `loopy run --stash` does the same for the CLI. **loopy stashes
+  but never pops.** The realization that fixed the design: because the worktree
+  is isolated, a stash is only *needed* when applying back later, and if a
+  later `git apply` fails on a dirty tree it's because the WIP overlaps the
+  patched lines — so auto-popping would re-introduce the exact conflict.
+  Leaving the WIP in a labeled stash (`loopy: set aside before starting a
+  loop`) keeps the checkout marker-free and recoverable; the user runs
+  `git stash pop` when ready (immediately is fine — the loop runs from HEAD
+  regardless). Untracked files are never stashed (loops don't see them).
+  `StashTracked` in `internal/loop/git.go`; the wizard offer is
+  `form.confirmStash` + `startFormLoops`. Invariant 2 holds — a stash is not a
+  commit, merge, or push, and it's the user who restores.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.

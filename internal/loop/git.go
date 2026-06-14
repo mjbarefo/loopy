@@ -79,9 +79,31 @@ func EnsureWorktreePreconditions(root string) error {
 		if len(dirty) > len(shown) {
 			suffix = fmt.Sprintf(" … and %d more", len(dirty)-len(shown))
 		}
-		return fmt.Errorf("uncommitted changes to tracked files (%s%s): commit or stash before starting a loop", strings.Join(shown, ", "), suffix)
+		return fmt.Errorf("uncommitted changes to tracked files (%s%s): commit them, or set them aside — `loopy run --stash` (the wizard offers this) stashes them, recoverable with `git stash pop`", strings.Join(shown, ", "), suffix)
 	}
 	return nil
+}
+
+// StashTracked sets aside uncommitted changes to tracked files under a labeled
+// git stash, leaving the working tree clean enough to satisfy
+// EnsureWorktreePreconditions. Untracked files are left in place — loop
+// worktrees never see them. Returns true if anything was stashed (false on an
+// already-clean tree). loopy never pops the stash: restoring is the user's
+// explicit `git stash pop`, so loopy can't leave conflict markers in the
+// checkout, and — because loop worktrees are isolated from HEAD — the WIP can
+// be popped back immediately without affecting the running loop.
+func StashTracked(root, label string) (bool, error) {
+	dirty, err := IsGitDirty(root)
+	if err != nil {
+		return false, err
+	}
+	if !dirty {
+		return false, nil
+	}
+	if _, err := runGitChecked(root, nil, "stash", "push", "-m", label); err != nil {
+		return false, fmt.Errorf("could not stash changes: %w", err)
+	}
+	return true, nil
 }
 
 // CreateLoopWorktree adds a worktree for the loop on branch loopy/<loop-id>
