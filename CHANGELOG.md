@@ -21,7 +21,7 @@ Homebrew tap.
   and is no longer silently stored as the project default; an explicit project
   default still prefills the field. (Design: `docs/verifier-spectrum.md`.)
 
-## [v0.1.0] - unreleased
+## [v0.1.0] - 2026-06-14
 
 The first release: the complete loop engine and review workflow.
 
