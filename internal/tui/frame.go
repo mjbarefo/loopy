@@ -79,6 +79,8 @@ type frameState struct {
 	confirmDelete bool
 	confirmAccept bool
 	confirmReject bool
+	confirmApply  bool
+	applyID       string // the loop the pending apply targets (may not be selected)
 	flash         string
 	showHelp      bool
 	loadErr       string
@@ -1125,7 +1127,14 @@ func quietStateLines(s frameState, width int) []cell {
 			cell{},
 			plainCell(loop.TruncateDisplay(fmt.Sprintf("   %s was accepted; its diff is durable — to ship it:", last.ID), width-1)),
 			joinCells(plainCell("     "), styled(s.color, sgrCyan, loop.TruncateDisplay(last.NextCommand, width-6))),
-			styled(s.color, sgrDim, "     on a branch, then commit and open your PR"),
+			joinCells(
+				plainCell("   "),
+				styled(s.color, sgrCyan, "A"),
+				plainCell(" applies it to your working tree · "),
+				styled(s.color, sgrCyan, "c"),
+				plainCell(" copies the command"),
+			),
+			styled(s.color, sgrDim, "     then review, commit, and open your PR"),
 		)
 	}
 	return lines
@@ -1172,6 +1181,7 @@ func helpLines(s frameState) []cell {
 		{"p", "pause at the next iteration boundary"},
 		{"r", "resume a paused loop · reject a parked one (confirms)"},
 		{"a", "abort a moving loop · accept a green one (confirms)"},
+		{"A", "git apply an accepted loop's diff to your tree (confirms)"},
 		{"d", "delete the loop and its evidence (asks for confirmation)"},
 		{"o", "quit and print the next command"},
 		{"q", "quit"},
@@ -1247,6 +1257,12 @@ func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 			plainCell(margin),
 			styled(s.color, sgrRed, "✗"),
 			plainCell(loop.TruncateDisplay(fmt.Sprintf(" reject %s? evidence kept, worktree freed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+		)
+	case s.confirmApply:
+		return joinCells(
+			plainCell(margin),
+			styled(s.color, sgrCyan, "→"),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(" git apply %s onto your working tree? loopy won't commit or push — y to confirm · n to cancel", s.applyID), width-len(margin)-1)),
 		)
 	case s.flash != "":
 		return joinCells(
