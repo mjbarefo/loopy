@@ -727,6 +727,36 @@ func runningVerb(v loop.LoopView) string {
 // plain words (what changed, did it pass), then the raw evidence with per-line
 // styling. Every styled line keeps a non-color signal — the diff's +/- and the
 // log's === markers carry the meaning when color is off.
+
+// bodyWrapRows caps how many visual rows one raw log/diff line may wrap to, so
+// a minified bundle or a base64 blob can't blow the scrollback open. Past the
+// cap the final row ends in … and the remainder is dropped — the raw artifact
+// on disk still has every byte.
+const bodyWrapRows = 4
+
+// wrapBodyLine renders one raw log/diff line into the prefixed strings the body
+// draws: tabs expanded, then hard-wrapped to the pane width preserving every
+// column (alignment and the +/- gutter survive, unlike word wrap). A line that
+// already fits is returned unchanged — byte-identical to the old truncating
+// path — so only genuinely long lines gain rows. Capped at bodyWrapRows.
+func wrapBodyLine(raw string, width int) []string {
+	expanded := strings.ReplaceAll(raw, "\t", "    ")
+	cw := width - 1 // the leading space the body indents every row with
+	if cw < 1 {
+		cw = 1
+	}
+	segs := loop.HardWrapDisplay(expanded, cw)
+	if len(segs) > bodyWrapRows {
+		rest := strings.Join(segs[bodyWrapRows-1:], "")
+		segs = append(segs[:bodyWrapRows-1], loop.TruncateDisplay(rest, cw))
+	}
+	out := make([]string, len(segs))
+	for i, seg := range segs {
+		out[i] = " " + seg
+	}
+	return out
+}
+
 func artifactBody(s frameState, width int) []cell {
 	art := s.art
 	if art.missing {
@@ -743,13 +773,15 @@ func artifactBody(s frameState, width int) []cell {
 	switch s.tab {
 	case tabDiff:
 		for _, l := range art.lines {
-			lines = append(lines, diffLine(s, l, width))
+			lines = append(lines, diffLines(s, l, width)...)
 		}
 	case tabVerifier:
 		lines = append(lines, verifierLogLines(s, width)...)
 	default:
 		for _, l := range art.lines {
-			lines = append(lines, plainCell(" "+loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)))
+			for _, seg := range wrapBodyLine(l, width) {
+				lines = append(lines, plainCell(seg))
+			}
 		}
 	}
 	return lines
@@ -852,21 +884,38 @@ func fileKindGlyph(kind string) (glyph, sgr string) {
 // diffLine styles one patch line: file headers bold, hunk markers dim cyan,
 // adds green, removals red, context plain. The classification is stateless,
 // so a tail-truncated patch starting mid-hunk still reads.
-func diffLine(s frameState, l string, width int) cell {
-	t := " " + loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)
+// diffLines renders one raw patch line, wrapped to the pane width. A long line
+// wraps instead of truncating, and every wrapped row keeps the line's color so
+// a continued addition still reads green to the eye.
+func diffLines(s frameState, l string, width int) []cell {
+	sgr := diffLineSGR(l)
+	var out []cell
+	for _, seg := range wrapBodyLine(l, width) {
+		if sgr == "" {
+			out = append(out, plainCell(seg))
+		} else {
+			out = append(out, styled(s.color, sgr, seg))
+		}
+	}
+	return out
+}
+
+// diffLineSGR is the patch line's color, keyed on its gutter — empty for a
+// context line (no color). The +/- glyph carries the meaning when color is off.
+func diffLineSGR(l string) string {
 	switch {
 	case strings.HasPrefix(l, "diff --git "),
 		strings.HasPrefix(l, "+++ "),
 		strings.HasPrefix(l, "--- "):
-		return styled(s.color, sgrBold, t)
+		return sgrBold
 	case strings.HasPrefix(l, "@@"):
-		return styled(s.color, sgrDim+";"+sgrCyan, t)
+		return sgrDim + ";" + sgrCyan
 	case strings.HasPrefix(l, "+"):
-		return styled(s.color, sgrGreen, t)
+		return sgrGreen
 	case strings.HasPrefix(l, "-"):
-		return styled(s.color, sgrRed, t)
+		return sgrRed
 	}
-	return plainCell(t)
+	return ""
 }
 
 // artifactIteration finds the iteration record the loaded artifact belongs
@@ -995,17 +1044,23 @@ func verifierLogLines(s frameState, width int) []cell {
 	cur := ""
 	var lines []cell
 	for _, l := range s.art.lines {
-		t := " " + loop.TruncateDisplay(strings.ReplaceAll(l, "\t", "    "), width-1)
+		// A stage marker, or a passing stage's output on a red run, dims; the
+		// failing stage's output stays plain. Every wrapped row of one source
+		// line shares that decision.
+		sgr, dim := "", false
 		if name, ok := stageMarkerName(l); ok {
 			cur = name
-			lines = append(lines, styled(s.color, sgrDim, t))
-			continue
+			sgr, dim = sgrDim, true
+		} else if failing != "" && cur != "" && cur != failing {
+			sgr, dim = sgrDim, true
 		}
-		if failing != "" && cur != "" && cur != failing {
-			lines = append(lines, styled(s.color, sgrDim, t))
-			continue
+		for _, seg := range wrapBodyLine(l, width) {
+			if dim {
+				lines = append(lines, styled(s.color, sgr, seg))
+			} else {
+				lines = append(lines, plainCell(seg))
+			}
 		}
-		lines = append(lines, plainCell(t))
 	}
 	return lines
 }

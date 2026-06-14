@@ -809,6 +809,22 @@ One entry each: what was decided, and why. Newest at the bottom of each section.
   The accepted loop has left the rail, so the target is the newest accepted
   loop (the same one the quiet rail shows and `c` copies).
 
+- **2026-06-13 — Long log/diff/body lines wrap instead of truncating, via a
+  new hard char-wrap (`loop.HardWrapDisplay`), not `WrapDisplay`.** The live
+  drive showed a verifier-log line cut at the right edge. The body now wraps
+  long lines across rows (capped at `bodyWrapRows`=4; the last row marks the
+  cut with … and the raw artifact on disk keeps every byte). **Deviation from
+  the baton's plan:** it suggested reusing `loop.WrapDisplay`, but that is a
+  *word* wrap that collapses internal whitespace — fine for prose like the
+  goal, wrong for a patch line where the leading indent and the `+`/`-` gutter
+  carry meaning. So I added `HardWrapDisplay` (break between runes, preserve
+  every column; concatenating the segments reproduces the input). A line that
+  already fits is returned unchanged, byte-identical to the old truncating
+  path, so only genuinely long lines gain rows and the frame geometry tests
+  held. Shared helper `wrapBodyLine` in `internal/tui/frame.go` feeds the diff,
+  verifier, and generic bodies; every wrapped row keeps its source line's
+  color. The bodies are scrolled, so extra rows are safe for the scroll math.
+
 ## For the human
 
 - ~~**License.**~~ Resolved 2026-06-11: MIT, per owner decision above.
