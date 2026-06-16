@@ -78,6 +78,11 @@ type formState struct {
 	iters       string
 	wall        string
 	budgetField int // 0 iterations, 1 wall clock
+
+	// confirmStash is set when enter on the confirm screen finds uncommitted
+	// changes: the screen turns into a y/n offer to stash them and start,
+	// rather than dead-ending on the dirty-repo refusal.
+	confirmStash bool
 }
 
 // openForm resolves everything a started loop would use, so every wizard
@@ -407,14 +412,23 @@ func confirmLines(s frameState, width int) []cell {
 	if len(f.selectedAgents()) > 1 {
 		action = fmt.Sprintf("enter races %d agents in parallel worktrees — your checkout is never touched", len(f.selectedAgents()))
 	}
-	return []cell{
+	lines := []cell{
 		joinCells(styled(s.color, sgrDim, "goal      "), plainCell(loop.TruncateDisplay(f.goal, width-10))),
 		joinCells(styled(s.color, sgrDim, "agent     "), plainCell(agents)),
 		joinCells(styled(s.color, sgrDim, "verifier  "), plainCell(loop.TruncateDisplay(strings.Join(parts, " && "), width-10))),
 		joinCells(styled(s.color, sgrDim, "budget    "), plainCell(f.iters+" iterations · "+f.wall)),
 		{},
-		// The action line is this screen's one accent and one affordance;
-		// esc was the same on every screen before it.
-		styled(s.color, sgrCyan, loop.TruncateDisplay(action, width)),
 	}
+	if f.confirmStash {
+		// Uncommitted changes turned the start into an offer. Say exactly what
+		// the stash does and that it's recoverable — loopy never pops it.
+		return append(lines,
+			styled(s.color, sgrYellow, "! uncommitted changes in your checkout — loops start from a clean HEAD."),
+			cell{},
+			styled(s.color, sgrCyan, loop.TruncateDisplay("stash them and start? they're set aside, recoverable with `git stash pop` — y to confirm · n to cancel", width)),
+		)
+	}
+	// The action line is this screen's one accent and one affordance;
+	// esc was the same on every screen before it.
+	return append(lines, styled(s.color, sgrCyan, loop.TruncateDisplay(action, width)))
 }

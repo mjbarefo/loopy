@@ -8,6 +8,18 @@ Homebrew tap.
 
 ## [Unreleased]
 
+### Added
+
+- A dirty repo no longer dead-ends a loop: loopy **offers to stash** instead.
+  Starting a loop with uncommitted changes to tracked files still refuses by
+  default (the loop branches from a clean HEAD), but now the monitor's confirm
+  screen turns into a `stash them and start?` y/n offer, and `loopy run
+  --stash` does the same on the CLI. loopy sets the changes aside under a
+  labeled `git stash` and **never pops them back** — you restore with `git
+  stash pop` whenever you like (immediately is fine; the loop runs from HEAD
+  regardless), so loopy can't leave conflict markers in your checkout.
+  Untracked files are never stashed.
+
 ### Changed
 
 - Monitor wizard: the verifier step now **defaults to the agent designing the

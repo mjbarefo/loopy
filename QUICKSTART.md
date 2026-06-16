@@ -59,7 +59,9 @@ The template variables (`{prompt}`, `{prompt_file}`, `{worktree}`,
 [docs/agents.md](docs/agents.md) is the tested invocation matrix (Claude
 Code and Codex are exercised through real loops) — test any new agent once
 with a tiny goal before trusting it with a budget. Commit the `.gitignore`
-change: loops refuse to start while tracked files have uncommitted changes.
+change: loops refuse to start while tracked files have uncommitted changes —
+or pass `--stash` (the monitor offers this when you start a loop) to set them
+aside first, recoverable any time with `git stash pop`.
 
 ## 3. Start your first loop
 

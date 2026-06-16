@@ -32,6 +32,9 @@ flags:
   --max-time <dur>        wall-clock budget, e.g. 30m (default 30m)
   --constraint <text>     goal constraint; repeatable
   --forbidden-path <p>    path the agent must not touch; repeatable
+  --stash                 set aside uncommitted tracked changes first (git
+                          stash) so a dirty repo doesn't block the loop;
+                          restore them whenever with: git stash pop
   --json                  stream progress as NDJSON events on stdout (one
                           object per line; the final "result" event carries
                           the same loop view as status --json). For driving
@@ -68,6 +71,7 @@ func handleRun(cwd string, args []string) error {
 	maxIters := fs.Int("max-iters", 0, "max iterations")
 	maxTime := fs.Duration("max-time", 0, "max wall clock")
 	jsonOut := fs.Bool("json", false, "stream progress as NDJSON events")
+	stash := fs.Bool("stash", false, "set aside uncommitted tracked changes first (git stash; restore with git stash pop)")
 
 	// Accept both `loopy run "goal" --flags` and `loopy run --flags "goal"`.
 	var goal string
@@ -121,6 +125,19 @@ func handleRun(cwd string, args []string) error {
 			MaxIterations: *maxIters,
 			MaxWallClock:  loop.Duration(*maxTime),
 		},
+	}
+
+	// --stash sets aside uncommitted tracked changes so the dirty-repo refusal
+	// passes; loopy never pops it back, so the user restores with git stash pop
+	// (the loop runs from HEAD, so they can do that whenever).
+	if *stash {
+		stashed, err := loop.StashTracked(root, "loopy: set aside before starting a loop")
+		if err != nil {
+			return err
+		}
+		if stashed && !*jsonOut {
+			fmt.Println("set aside uncommitted changes — restore later with `git stash pop`")
+		}
 	}
 
 	if *race != "" {

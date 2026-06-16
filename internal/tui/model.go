@@ -937,6 +937,18 @@ func (m *model) enterVerifierStep() tea.Cmd {
 
 func (m model) handleFormKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.form.confirmStash {
+		switch key {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "y":
+			return m.startFormLoops(true)
+		case "n", "esc":
+			m.form.confirmStash = false
+			m.say("cancelled — commit or stash your changes, then start")
+		}
+		return m, nil
+	}
 	switch key {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -1072,24 +1084,52 @@ func (m model) wizardAdvance() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case stepConfirm:
-		ids, err := startLoops(m.root, m.form)
-		if err != nil {
-			m.say("%v", err)
+		// Uncommitted changes turn enter into a stash offer instead of the
+		// dead-end refusal; the confirm screen renders it, y stashes and starts.
+		if dirty, err := loop.IsGitDirty(m.root); err == nil && dirty {
+			m.form.confirmStash = true
 			return m, nil
 		}
-		m.form = formState{}
-		m.selectedID = ids[0]
-		m.tab = tabOverview
-		m.scroll = -1
-		if len(ids) > 1 {
-			m.say("racing %d loops — when all park: loopy judge %s", len(ids), strings.Join(ids, " "))
-		} else {
-			m.say("loop %s started", ids[0])
-		}
-		m.reload()
-		return m, nil
+		return m.startFormLoops(false)
 	}
 	f.step++
+	return m, nil
+}
+
+// startFormLoops creates the wizard's loop(s), optionally stashing uncommitted
+// changes first (the confirmStash offer). loopy never pops the stash — the
+// flash points the user at `git stash pop`, and the loop runs from HEAD either
+// way, so they can restore whenever.
+func (m model) startFormLoops(stashFirst bool) (tea.Model, tea.Cmd) {
+	stashed := false
+	if stashFirst {
+		var err error
+		stashed, err = loop.StashTracked(m.root, "loopy: set aside before starting a loop")
+		if err != nil {
+			m.form.confirmStash = false
+			m.say("could not stash: %v", err)
+			return m, nil
+		}
+	}
+	ids, err := startLoops(m.root, m.form)
+	if err != nil {
+		m.form.confirmStash = false
+		m.say("%v", err)
+		return m, nil
+	}
+	m.form = formState{}
+	m.selectedID = ids[0]
+	m.tab = tabOverview
+	m.scroll = -1
+	switch {
+	case len(ids) > 1:
+		m.say("racing %d loops — when all park: loopy judge %s", len(ids), strings.Join(ids, " "))
+	case stashed:
+		m.say("loop %s started — your changes are stashed (git stash pop to restore)", ids[0])
+	default:
+		m.say("loop %s started", ids[0])
+	}
+	m.reload()
 	return m, nil
 }
 

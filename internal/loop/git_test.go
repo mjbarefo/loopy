@@ -155,3 +155,42 @@ func TestParseNameStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestStashTracked(t *testing.T) {
+	root := newTestRepo(t)
+
+	// Clean tree: nothing to stash, no error.
+	if stashed, err := StashTracked(root, "loopy: test"); err != nil || stashed {
+		t.Fatalf("clean tree: stashed=%v err=%v, want false/nil", stashed, err)
+	}
+
+	// Dirty a tracked file; add an untracked file.
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stashed, err := StashTracked(root, "loopy: set aside before starting a loop")
+	if err != nil || !stashed {
+		t.Fatalf("dirty tree: stashed=%v err=%v, want true/nil", stashed, err)
+	}
+	// Tracked change set aside → the precondition now passes.
+	if err := EnsureWorktreePreconditions(root); err != nil {
+		t.Errorf("preconditions should pass after stashing: %v", err)
+	}
+	// The untracked file is left in place — loops never see it.
+	if _, err := os.Stat(filepath.Join(root, "untracked.txt")); err != nil {
+		t.Errorf("untracked file should be left in place: %v", err)
+	}
+	// The stash is labeled and recoverable; loopy never drops it.
+	list, err := gitOutput(root, "stash", "list")
+	if err != nil || !strings.Contains(list, "set aside before starting a loop") {
+		t.Errorf("stash should be labeled and present, got %q (err %v)", list, err)
+	}
+	mustGit(t, root, "stash", "pop")
+	if b, _ := os.ReadFile(filepath.Join(root, "hello.txt")); string(b) != "changed\n" {
+		t.Errorf("stash pop should restore the change, got %q", b)
+	}
+}
