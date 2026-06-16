@@ -8,6 +8,10 @@ Homebrew tap.
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-06-16
+
+The first release: the complete loop engine and review workflow.
+
 ### Added
 
 - A dirty repo no longer dead-ends a loop: loopy **offers to stash** instead.
@@ -19,26 +23,6 @@ Homebrew tap.
   stash pop` whenever you like (immediately is fine; the loop runs from HEAD
   regardless), so loopy can't leave conflict markers in your checkout.
   Untracked files are never stashed.
-
-### Changed
-
-- Monitor wizard: the verifier step now **defaults to the agent designing the
-  check.** The `checks` field starts blank instead of prefilled from inference,
-  so the agent — not a guessed command like `make check` — is the default gate
-  designer: with the goal as the ask question, the engine designs a
-  goal-specific deterministic gate in the background once the loop starts and
-  folds it in ahead of the question (no up-front pause). `tab` (design the gate
-  now, up front) is promoted from a dim footer hint to its own prominent line.
-  Inference no longer feeds the wizard (it still backs `loopy init`/`loopy run`)
-  and is no longer silently stored as the project default; an explicit project
-  default still prefills the field. (Design: `docs/verifier-spectrum.md`.)
-
-## [v0.1.0] - 2026-06-14
-
-The first release: the complete loop engine and review workflow.
-
-### Added
-
 - **The loop engine**: goal + verifier + budget → an agent iterates in an
   isolated git worktree until green or the budget runs out. Baseline verify,
   feedback-driven prompt composition, hard iteration/wall-clock budgets,
@@ -159,6 +143,16 @@ The first release: the complete loop engine and review workflow.
 
 ### Changed
 
+- Monitor wizard: the verifier step now **defaults to the agent designing the
+  check.** The `checks` field starts blank instead of prefilled from inference,
+  so the agent — not a guessed command like `make check` — is the default gate
+  designer: with the goal as the ask question, the engine designs a
+  goal-specific deterministic gate in the background once the loop starts and
+  folds it in ahead of the question (no up-front pause). `tab` (design the gate
+  now, up front) is promoted from a dim footer hint to its own prominent line.
+  Inference no longer feeds the wizard (it still backs `loopy init`/`loopy run`)
+  and is no longer silently stored as the project default; an explicit project
+  default still prefills the field. (Design: `docs/verifier-spectrum.md`.)
 - Monitor: long log, diff, and verifier lines now **wrap** instead of being
   cut off at the right edge. A wrapped line preserves its exact columns — the
   leading indent and the `+`/`-` gutter survive, and each row keeps the line's
