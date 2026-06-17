@@ -25,7 +25,7 @@ func TestApplyKeyArmsConfirm(t *testing.T) {
 	m := model{loops: loops, selected: 0}
 	res, _ := m.handleKey(press('A', "A"))
 	m = res.(model)
-	if !m.confirmApply {
+	if m.confirm != confirmApply {
 		t.Fatal("A should arm the apply confirmation when something is accepted")
 	}
 	if m.applyID != "flaky-importer" || m.applyPath != loops[1].FinalDiffPath {
@@ -33,7 +33,7 @@ func TestApplyKeyArmsConfirm(t *testing.T) {
 	}
 	res, _ = m.handleKey(press(tea.KeyEscape, ""))
 	m = res.(model)
-	if m.confirmApply || m.flash == "" {
+	if m.confirm != confirmNone || m.flash == "" {
 		t.Fatal("esc should cancel the apply and say so")
 	}
 }
@@ -43,7 +43,7 @@ func TestApplyKeyNoTarget(t *testing.T) {
 	m := model{loops: sampleLoops(), selected: 0} // running + parked, none accepted
 	res, _ := m.handleKey(press('A', "A"))
 	m = res.(model)
-	if m.confirmApply {
+	if m.confirm == confirmApply {
 		t.Fatal("A with nothing accepted must not arm a confirmation")
 	}
 	if m.flash == "" {
