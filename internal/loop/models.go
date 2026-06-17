@@ -140,13 +140,18 @@ type Loop struct {
 	EndedAt   string `json:"ended_at,omitempty"`
 }
 
-// Done reports whether the loop has reached a terminal state for the engine.
-func (l Loop) Done() bool {
-	switch l.Status {
+// IsTerminalStatus reports whether a status string is a terminal loop state.
+func IsTerminalStatus(status string) bool {
+	switch status {
 	case StatusGreen, StatusParked, StatusAccepted, StatusRejected:
 		return true
 	}
 	return false
+}
+
+// Done reports whether the loop has reached a terminal state for the engine.
+func (l Loop) Done() bool {
+	return IsTerminalStatus(l.Status)
 }
 
 // StageResult records one verifier stage's outcome inside an iteration.

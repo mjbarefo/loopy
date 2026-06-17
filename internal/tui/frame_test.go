@@ -368,7 +368,7 @@ func TestFrameTruncationBanner(t *testing.T) {
 
 func TestFrameAbortConfirmInFooter(t *testing.T) {
 	s := wideState()
-	s.confirmAbort = true
+	s.confirm = confirmAbort
 	if frame := renderFrame(s); !strings.Contains(frame, "abort fix-csv-quoting? y to confirm") {
 		t.Error("footer should ask for abort confirmation")
 	}
@@ -376,12 +376,11 @@ func TestFrameAbortConfirmInFooter(t *testing.T) {
 
 func TestFrameDecisionConfirmsInFooter(t *testing.T) {
 	s := wideState()
-	s.confirmAccept = true
+	s.confirm = confirmAccept
 	if frame := renderFrame(s); !strings.Contains(frame, "accept fix-csv-quoting? the decision is recorded") {
 		t.Error("footer should ask for accept confirmation")
 	}
-	s.confirmAccept = false
-	s.confirmReject = true
+	s.confirm = confirmReject
 	if frame := renderFrame(s); !strings.Contains(frame, "reject fix-csv-quoting? evidence kept, worktree freed") {
 		t.Error("footer should ask for reject confirmation")
 	}

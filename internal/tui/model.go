@@ -41,6 +41,20 @@ func synthesizeCmd(root, agent, goal string, seq int) tea.Cmd {
 	}
 }
 
+// confirmKind names the one confirmation that may be pending at any time.
+// The values are mutually exclusive: each key handler sets at most one and
+// handleKey clears it on the next keypress.
+type confirmKind int
+
+const (
+	confirmNone   confirmKind = iota
+	confirmAbort              // 'a' on a live loop
+	confirmDelete             // 'd' on a stopped loop
+	confirmAccept             // 'a' on a green loop
+	confirmReject             // 'r' on a parked/green loop
+	confirmApply              // 'A' to apply an accepted diff
+)
+
 type model struct {
 	root  string
 	color bool
@@ -59,17 +73,13 @@ type model struct {
 	detected         []loop.AgentSuggestion
 	form             formState
 
-	focusDetail   bool
-	tab           tabID
-	scroll        int // -1 = follow the tail
-	art           artifact
-	confirmAbort  bool
-	confirmDelete bool
-	confirmAccept bool
-	confirmReject bool
-	confirmApply  bool
-	// applyID/applyPath capture the apply target when confirmApply is set: an
-	// accepted loop leaves the rail, so the target is usually the newest
+	focusDetail bool
+	tab         tabID
+	scroll      int // -1 = follow the tail
+	art         artifact
+	confirm     confirmKind
+	// applyID/applyPath capture the apply target when confirm == confirmApply:
+	// an accepted loop leaves the rail, so the target is usually the newest
 	// accepted loop, not the current selection.
 	applyID    string
 	applyPath  string
@@ -333,7 +343,7 @@ func (m model) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = false
 		return m, nil
 	}
-	if m.form.active || m.confirmAbort || m.confirmDelete || m.confirmAccept || m.confirmReject || m.confirmApply {
+	if m.form.active || m.confirm != confirmNone {
 		return m, nil
 	}
 	switch t := hitTest(m.frameState(), msg.X, msg.Y); t.kind {
@@ -390,54 +400,27 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	}
 
-	if m.confirmAbort {
-		switch key {
-		case "y":
-			m.requestAbort()
-		case "n", "esc", "q", "ctrl+c":
-			m.say("abort cancelled")
+	if m.confirm != confirmNone {
+		type confirmEntry struct {
+			action func()
+			cancel string
 		}
-		m.confirmAbort = false
-		return m, nil
-	}
-	if m.confirmDelete {
-		switch key {
-		case "y":
-			m.requestDelete()
-		case "n", "esc", "q", "ctrl+c":
-			m.say("delete cancelled")
+		dispatch := map[confirmKind]confirmEntry{
+			confirmAbort:  {m.requestAbort, "abort cancelled"},
+			confirmDelete: {m.requestDelete, "delete cancelled"},
+			confirmAccept: {m.requestAccept, "accept cancelled"},
+			confirmReject: {m.requestReject, "reject cancelled"},
+			confirmApply:  {m.runApply, "apply cancelled"},
 		}
-		m.confirmDelete = false
-		return m, nil
-	}
-	if m.confirmAccept {
-		switch key {
-		case "y":
-			m.requestAccept()
-		case "n", "esc", "q", "ctrl+c":
-			m.say("accept cancelled")
+		if e, ok := dispatch[m.confirm]; ok {
+			switch key {
+			case "y":
+				e.action()
+			case "n", "esc", "q", "ctrl+c":
+				m.say("%s", e.cancel)
+			}
 		}
-		m.confirmAccept = false
-		return m, nil
-	}
-	if m.confirmReject {
-		switch key {
-		case "y":
-			m.requestReject()
-		case "n", "esc", "q", "ctrl+c":
-			m.say("reject cancelled")
-		}
-		m.confirmReject = false
-		return m, nil
-	}
-	if m.confirmApply {
-		switch key {
-		case "y":
-			m.runApply()
-		case "n", "esc", "q", "ctrl+c":
-			m.say("apply cancelled")
-		}
-		m.confirmApply = false
+		m.confirm = confirmNone
 		return m, nil
 	}
 
@@ -533,7 +516,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// Contextual: reject judges a parked loop; everything else is resume.
 		switch v := m.current(); {
 		case v != nil && (v.Status == loop.StatusGreen || v.Status == loop.StatusParked):
-			m.confirmReject = true
+			m.confirm = confirmReject
 		case v != nil && decided(*v):
 			m.say("%s is already %s", v.ID, v.Status)
 		default:
@@ -547,9 +530,9 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case v == nil:
 			m.say("nothing to abort")
 		case !done(*v):
-			m.confirmAbort = true
+			m.confirm = confirmAbort
 		case v.Status == loop.StatusGreen:
-			m.confirmAccept = true
+			m.confirm = confirmAccept
 		case v.Status == loop.StatusParked:
 			m.say("%s is not green — accepting it is an override: loopy accept %s --override --reason …", v.ID, v.ID)
 		default:
@@ -563,7 +546,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case v.Live:
 			m.say("a live engine holds %s — abort it first (a)", v.ID)
 		default:
-			m.confirmDelete = true
+			m.confirm = confirmDelete
 		}
 		return m, nil
 	case "o":
@@ -749,7 +732,7 @@ func (m *model) requestApply() {
 	}
 	m.applyID = v.ID
 	m.applyPath = v.FinalDiffPath
-	m.confirmApply = true
+	m.confirm = confirmApply
 }
 
 // runApply applies the accepted loop's durable diff to the user's working
@@ -871,11 +854,7 @@ func (m model) frameState() frameState {
 		tab:              m.tab,
 		scroll:           m.scroll,
 		art:              m.art,
-		confirmAbort:     m.confirmAbort,
-		confirmDelete:    m.confirmDelete,
-		confirmAccept:    m.confirmAccept,
-		confirmReject:    m.confirmReject,
-		confirmApply:     m.confirmApply,
+		confirm:          m.confirm,
 		applyID:          m.applyID,
 		flash:            m.flash,
 		showHelp:         m.showHelp,
@@ -1162,11 +1141,7 @@ func max(a, b int) int {
 }
 
 func done(v loop.LoopView) bool {
-	switch v.Status {
-	case loop.StatusGreen, loop.StatusParked, loop.StatusAccepted, loop.StatusRejected:
-		return true
-	}
-	return false
+	return loop.IsTerminalStatus(v.Status)
 }
 
 func decided(v loop.LoopView) bool {

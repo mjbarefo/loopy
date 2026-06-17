@@ -185,19 +185,19 @@ func TestDeleteKeyConfirms(t *testing.T) {
 	m := model{loops: sampleLoops(), selected: 1} // parked loop
 	res, _ := m.handleKey(press('d', "d"))
 	m = res.(model)
-	if !m.confirmDelete {
+	if m.confirm != confirmDelete {
 		t.Fatal("d on a parked loop should ask for confirmation")
 	}
 	res, _ = m.handleKey(press('n', "n"))
 	m = res.(model)
-	if m.confirmDelete || m.flash == "" {
+	if m.confirm != confirmNone || m.flash == "" {
 		t.Fatal("n should cancel and say so")
 	}
 
 	m = model{loops: sampleLoops(), selected: 0} // live loop
 	res, _ = m.handleKey(press('d', "d"))
 	m = res.(model)
-	if m.confirmDelete {
+	if m.confirm == confirmDelete {
 		t.Fatal("a live loop must not be deletable from the monitor")
 	}
 	if m.flash == "" {
@@ -307,10 +307,10 @@ func TestMouseClick(t *testing.T) {
 		t.Fatalf("the diff tab opens answer-first at the top, scroll=%d", m.scroll)
 	}
 
-	m = model{loops: sampleLoops(), selected: 0, width: 120, height: 36, confirmAccept: true}
+	m = model{loops: sampleLoops(), selected: 0, width: 120, height: 36, confirm: confirmAccept}
 	res, _ = m.Update(tea.MouseClickMsg{X: 4, Y: 5, Button: tea.MouseLeft})
 	m = res.(model)
-	if m.selected != 0 || !m.confirmAccept {
+	if m.selected != 0 || m.confirm != confirmAccept {
 		t.Fatal("a pending confirm must ignore clicks — decisions stay explicit")
 	}
 
@@ -465,26 +465,26 @@ func TestAcceptKeyIsContextual(t *testing.T) {
 	m := model{loops: loops, selected: 0} // running loop
 	res, _ := m.handleKey(press('a', "a"))
 	m = res.(model)
-	if !m.confirmAbort || m.confirmAccept {
+	if m.confirm != confirmAbort {
 		t.Fatal("a on a running loop should arm abort, not accept")
 	}
 
 	m = model{loops: loops, selected: 1} // green loop
 	res, _ = m.handleKey(press('a', "a"))
 	m = res.(model)
-	if !m.confirmAccept || m.confirmAbort {
+	if m.confirm != confirmAccept {
 		t.Fatal("a on a green loop should arm accept, not abort")
 	}
 	res, _ = m.handleKey(press('n', "n"))
 	m = res.(model)
-	if m.confirmAccept || m.flash == "" {
+	if m.confirm != confirmNone || m.flash == "" {
 		t.Fatal("n should cancel the accept and say so")
 	}
 
 	m = model{loops: sampleLoops(), selected: 1} // parked red loop
 	res, _ = m.handleKey(press('a', "a"))
 	m = res.(model)
-	if m.confirmAccept || m.confirmAbort {
+	if m.confirm == confirmAccept || m.confirm == confirmAbort {
 		t.Fatal("a parked red loop is neither abortable nor acceptable here")
 	}
 	if m.flash == "" {
@@ -501,12 +501,12 @@ func TestRejectKeyIsContextual(t *testing.T) {
 		m := model{loops: loops, selected: 1}
 		res, _ := m.handleKey(press('r', "r"))
 		m = res.(model)
-		if !m.confirmReject {
+		if m.confirm != confirmReject {
 			t.Fatalf("r on a %s loop should arm the reject confirmation", status)
 		}
 		res, _ = m.handleKey(press(tea.KeyEscape, ""))
 		m = res.(model)
-		if m.confirmReject || m.flash == "" {
+		if m.confirm != confirmNone || m.flash == "" {
 			t.Fatal("esc should cancel the reject and say so")
 		}
 	}
@@ -514,7 +514,7 @@ func TestRejectKeyIsContextual(t *testing.T) {
 	m := model{loops: sampleLoops(), selected: 0} // live loop: r is resume
 	res, _ := m.handleKey(press('r', "r"))
 	m = res.(model)
-	if m.confirmReject {
+	if m.confirm == confirmReject {
 		t.Fatal("r on a running loop must stay resume, not reject")
 	}
 }

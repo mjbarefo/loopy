@@ -73,17 +73,13 @@ type frameState struct {
 	art         artifact
 	// elapsed strings are precomputed by the model (they need a clock; the
 	// renderer must stay pure and deterministic).
-	phaseElapsed  string
-	synthElapsed  string
-	confirmAbort  bool
-	confirmDelete bool
-	confirmAccept bool
-	confirmReject bool
-	confirmApply  bool
-	applyID       string // the loop the pending apply targets (may not be selected)
-	flash         string
-	showHelp      bool
-	loadErr       string
+	phaseElapsed string
+	synthElapsed string
+	confirm      confirmKind
+	applyID      string // the loop the pending apply targets (may not be selected)
+	flash        string
+	showHelp     bool
+	loadErr      string
 }
 
 // cell is a piece of text with an optional styled form; layout always
@@ -1280,46 +1276,46 @@ func detailHintsFor(sel *loop.LoopView) string {
 	return detailHints
 }
 
+// footerConfirms maps each pending confirmation to its footer prompt: a glyph,
+// its accent color, a one-%s format (the loop id), and whether it needs a
+// selected loop. The id is sel.ID for the loop-scoped confirms and s.applyID
+// for apply (whose target may have left the rail). Static, so the render path
+// stays allocation-free.
+var footerConfirms = map[confirmKind]struct {
+	glyph, color, format string
+	needSel              bool
+}{
+	confirmAbort:  {"✗", sgrRed, " abort %s? y to confirm · n to cancel", true},
+	confirmDelete: {"✗", sgrRed, " delete %s? all its evidence is removed — y to confirm · n to cancel", true},
+	confirmAccept: {"✓", sgrGreen, " accept %s? the decision is recorded — y to confirm · n to cancel", true},
+	confirmReject: {"✗", sgrRed, " reject %s? evidence kept, worktree freed — y to confirm · n to cancel", true},
+	confirmApply:  {"→", sgrCyan, " git apply %s, then remove the loop? loopy won't commit or push; the logbook keeps a line — y to confirm · n to cancel", false},
+}
+
 func footerCell(s frameState, sel *loop.LoopView, width int) cell {
 	margin := " "
 	if s.roomy() {
 		margin = "  "
 	}
-	switch {
-	case s.form.active && s.flash == "":
-		// The wizard screens carry their own affordance line.
+	// The wizard screens carry their own affordance line.
+	if s.form.active && s.flash == "" {
 		return cell{}
-	case s.confirmAbort && sel != nil:
+	}
+	// A pending confirmation owns the footer (it outranks a leftover flash). A
+	// loop-scoped confirm with no selection can't render its prompt — fall past
+	// it to the flash/next footer, exactly as an unset confirm would.
+	if e, ok := footerConfirms[s.confirm]; ok && (!e.needSel || sel != nil) {
+		id := s.applyID
+		if e.needSel {
+			id = sel.ID
+		}
 		return joinCells(
 			plainCell(margin),
-			styled(s.color, sgrRed, "✗"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" abort %s? y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
+			styled(s.color, e.color, e.glyph),
+			plainCell(loop.TruncateDisplay(fmt.Sprintf(e.format, id), width-len(margin)-1)),
 		)
-	case s.confirmDelete && sel != nil:
-		return joinCells(
-			plainCell(margin),
-			styled(s.color, sgrRed, "✗"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" delete %s? all its evidence is removed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
-		)
-	case s.confirmAccept && sel != nil:
-		return joinCells(
-			plainCell(margin),
-			styled(s.color, sgrGreen, "✓"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" accept %s? the decision is recorded — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
-		)
-	case s.confirmReject && sel != nil:
-		return joinCells(
-			plainCell(margin),
-			styled(s.color, sgrRed, "✗"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" reject %s? evidence kept, worktree freed — y to confirm · n to cancel", sel.ID), width-len(margin)-1)),
-		)
-	case s.confirmApply:
-		return joinCells(
-			plainCell(margin),
-			styled(s.color, sgrCyan, "→"),
-			plainCell(loop.TruncateDisplay(fmt.Sprintf(" git apply %s, then remove the loop? loopy won't commit or push; the logbook keeps a line — y to confirm · n to cancel", s.applyID), width-len(margin)-1)),
-		)
-	case s.flash != "":
+	}
+	if s.flash != "" {
 		return joinCells(
 			plainCell(margin),
 			styled(s.color, sgrBold, loop.TruncateDisplay(s.flash, width-len(margin))),
