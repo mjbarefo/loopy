@@ -358,12 +358,11 @@ func synthesizeVerifier(root, agentName, race, goal string, interactive bool) ([
 		fmt.Println("trial run: red right now, as a verifier for unfinished work should be")
 	}
 	fmt.Print("use it as this loop's verifier? [Y/n] ")
-	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
-	if readErr != nil && line == "" {
-		return nil, fmt.Errorf("no confirmation; pass --verify <cmd>")
+	ok, err := confirmYN()
+	if err != nil {
+		return nil, err
 	}
-	answer := strings.ToLower(strings.TrimSpace(line))
-	if answer != "" && answer != "y" && answer != "yes" {
+	if !ok {
 		return nil, fmt.Errorf("declined; pass --verify <cmd> to define the verifier explicitly")
 	}
 	return []loop.Stage{{Name: "goal", Cmd: res.Cmd}}, nil
@@ -404,12 +403,12 @@ func resolveVerifier(root string, cmds []string, interactive bool) ([]loop.Stage
 		fmt.Printf("  %d. %s: %s\n", i+1, s.Name, s.Cmd)
 	}
 	fmt.Print("use this as the project's default verifier? [Y/n] ")
-	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
-	if readErr != nil && line == "" {
-		return nil, fmt.Errorf("no confirmation; pass --verify <cmd>")
+	var confirmed bool
+	confirmed, err = confirmYN()
+	if err != nil {
+		return nil, err
 	}
-	answer := strings.ToLower(strings.TrimSpace(line))
-	if answer != "" && answer != "y" && answer != "yes" {
+	if !confirmed {
 		return nil, fmt.Errorf("declined; pass --verify <cmd> to define the verifier explicitly")
 	}
 	cfg.DefaultVerifier = inferred.Stages
@@ -418,6 +417,17 @@ func resolveVerifier(root string, cmds []string, interactive bool) ([]loop.Stage
 	}
 	fmt.Println("stored as default verifier in .loopy/config.json")
 	return inferred.Stages, nil
+}
+
+// confirmYN reads a [Y/n] answer from stdin; empty/"y"/"yes" confirm. The
+// bool is the answer; a read error with no input is returned as the error.
+func confirmYN() (bool, error) {
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return false, fmt.Errorf("no confirmation; pass --verify <cmd>")
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "" || answer == "y" || answer == "yes", nil
 }
 
 func describeStages(stages []loop.Stage) string {
